@@ -28,20 +28,22 @@ const App: React.FC = () => {
     if (typeof transcript === 'string') {
       transcriptText = transcript;
     } else if (transcript && typeof transcript === 'object') {
+      // Use type assertion to handle the object properties
+      const transcriptObj = transcript as Record<string, any>;
       // Try to access common transcript properties
-      if (transcript.text) {
-        transcriptText = transcript.text;
-      } else if (transcript.transcript) {
-        transcriptText = transcript.transcript;
-      } else if (transcript.content) {
-        transcriptText = transcript.content;
+      if (transcriptObj.text) {
+        transcriptText = transcriptObj.text;
+      } else if (transcriptObj.transcript) {
+        transcriptText = transcriptObj.transcript;
+      } else if (transcriptObj.content) {
+        transcriptText = transcriptObj.content;
       } else {
         // Fallback to JSON stringify but avoid [object Object]
         try {
-          const jsonStr = JSON.stringify(transcript);
+          const jsonStr = JSON.stringify(transcriptObj);
           transcriptText = jsonStr !== "[object Object]" ? jsonStr : ""; 
         } catch (e) {
-          transcriptText = String(transcript);
+          transcriptText = String(transcriptObj);
         }
       }
     }
@@ -60,20 +62,22 @@ const App: React.FC = () => {
     if (typeof transcript === 'string') {
       transcriptText = transcript;
     } else if (transcript && typeof transcript === 'object') {
+      // Use type assertion to handle the object properties
+      const transcriptObj = transcript as Record<string, any>;
       // Try to access common transcript properties
-      if (transcript.text) {
-        transcriptText = transcript.text;
-      } else if (transcript.transcript) {
-        transcriptText = transcript.transcript;
-      } else if (transcript.content) {
-        transcriptText = transcript.content;
+      if (transcriptObj.text) {
+        transcriptText = transcriptObj.text;
+      } else if (transcriptObj.transcript) {
+        transcriptText = transcriptObj.transcript;
+      } else if (transcriptObj.content) {
+        transcriptText = transcriptObj.content;
       } else {
         // Fallback to JSON stringify but avoid [object Object]
         try {
-          const jsonStr = JSON.stringify(transcript);
+          const jsonStr = JSON.stringify(transcriptObj);
           transcriptText = jsonStr !== "[object Object]" ? jsonStr : "";
         } catch (e) {
-          transcriptText = String(transcript);
+          transcriptText = String(transcriptObj);
         }
       }
     }
@@ -151,20 +155,22 @@ const App: React.FC = () => {
             if (typeof message.content === 'string') {
               displayContent = message.content;
             } else if (message.content && typeof message.content === 'object') {
+              // Use type assertion to handle the object properties
+              const contentObj = message.content as Record<string, any>;
               // Try to access common transcript properties
-              if (message.content.text) {
-                displayContent = message.content.text;
-              } else if (message.content.transcript) {
-                displayContent = message.content.transcript;
-              } else if (message.content.content) {
-                displayContent = message.content.content;
+              if (contentObj.text) {
+                displayContent = contentObj.text;
+              } else if (contentObj.transcript) {
+                displayContent = contentObj.transcript;
+              } else if (contentObj.content) {
+                displayContent = contentObj.content;
               } else {
                 // Fallback to JSON stringify but avoid [object Object]
                 try {
-                  const jsonStr = JSON.stringify(message.content);
+                  const jsonStr = JSON.stringify(contentObj);
                   displayContent = jsonStr !== "[object Object]" ? jsonStr : "Unable to display message"; 
                 } catch (e) {
-                  displayContent = String(message.content);
+                  displayContent = String(contentObj);
                 }
               }
             }
