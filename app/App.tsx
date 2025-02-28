@@ -14,6 +14,9 @@ const App: React.FC = () => {
   const [state, setState] = useState<TransportState>("idle");
   const [isActive, setIsActive] = useState(false);
 
+  // Add direct rendering of transcript arrays for debugging
+  const debugMode = false; // Set to true to see raw transcripts
+
   // Track conversation messages with unique IDs
   const [messages, setMessages] = useState<Array<{role: string, content: string, id: string}>>([
     {
@@ -37,17 +40,53 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Add listeners for all relevant transcript events
+  useEffect(() => {
+    // Additional logging for debug purposes
+    if (voiceClient) {
+      console.log("VoiceClient initialized successfully");
+      
+      // Register any additional event listeners here
+      const handleLog = (message: any) => {
+        console.log("Daily voice log:", message);
+      };
+      
+      voiceClient.on('log', handleLog);
+      
+      return () => {
+        voiceClient.off('log', handleLog);
+      };
+    }
+  }, [voiceClient]);
+
   useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript) => {
+    // Extract text content from the transcript
+    console.log("Raw bot transcript received:", transcript);
+    
     let transcriptText = '';
     
     // Handle string transcripts
     if (typeof transcript === 'string') {
       transcriptText = transcript;
     } 
+    // Handle potential parsed JSON string
+    else if (typeof transcript === 'string' && transcript.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(transcript);
+        if (parsed.text) transcriptText = parsed.text;
+        else if (parsed.transcript) transcriptText = parsed.transcript;
+        else if (parsed.content) transcriptText = parsed.content;
+        else if (parsed.message) transcriptText = parsed.message;
+        else transcriptText = transcript;
+      } catch {
+        transcriptText = transcript;
+      }
+    }
     // Handle object transcripts
     else if (transcript && typeof transcript === 'object') {
-      // Try different common properties
       const obj = transcript as any;
+      
+      // Try accessing various properties directly
       if (typeof obj.text === 'string') {
         transcriptText = obj.text;
       } else if (typeof obj.transcript === 'string') {
@@ -56,19 +95,28 @@ const App: React.FC = () => {
         transcriptText = obj.content;
       } else if (typeof obj.message === 'string') {
         transcriptText = obj.message;
+      } else if (typeof obj.value === 'string') {
+        transcriptText = obj.value;
+      } else if (typeof obj.botTranscript === 'string') {
+        transcriptText = obj.botTranscript;
+      } else if (typeof obj.data === 'string') {
+        transcriptText = obj.data;
+      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
+        transcriptText = obj.data.text;
       } else {
-        // Last resort: stringify the object
+        // Last resort: stringify the object but avoid [object Object]
         try {
-          transcriptText = JSON.stringify(transcript);
-          if (transcriptText === '{}' || transcriptText === '[object Object]') {
-            return; // Skip empty objects
+          const jsonString = JSON.stringify(obj);
+          if (jsonString !== '{}' && jsonString !== '[object Object]') {
+            transcriptText = jsonString;
           }
         } catch (e) {
           console.error("Failed to stringify transcript:", e);
-          return; // Skip on error
         }
       }
     }
+    
+    console.log("Extracted bot transcript:", transcriptText);
     
     // Skip empty transcripts
     if (!transcriptText || !transcriptText.trim()) {
@@ -81,30 +129,49 @@ const App: React.FC = () => {
       return;
     }
     
-    console.log("Bot transcript:", transcriptText);
-    sentMessages.current.add(msgKey);
-    
     // Add the message with a unique ID
     const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    sentMessages.current.add(msgKey);
     setBotTranscript(prev => [...prev, transcriptText]);
-    setMessages(prev => [...prev, { 
-      role: "assistant", 
-      content: transcriptText,
-      id: msgId 
-    }]);
+    
+    // Use setTimeout to ensure state updates don't conflict
+    setTimeout(() => {
+      setMessages(prev => [...prev, { 
+        role: "assistant", 
+        content: transcriptText,
+        id: msgId 
+      }]);
+    }, 10);
   });
 
   useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript) => {
+    // Extract text content from the transcript
+    console.log("Raw user transcript received:", transcript);
+    
     let transcriptText = '';
     
     // Handle string transcripts
     if (typeof transcript === 'string') {
       transcriptText = transcript;
     } 
+    // Handle potential parsed JSON string
+    else if (typeof transcript === 'string' && transcript.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(transcript);
+        if (parsed.text) transcriptText = parsed.text;
+        else if (parsed.transcript) transcriptText = parsed.transcript;
+        else if (parsed.content) transcriptText = parsed.content;
+        else if (parsed.message) transcriptText = parsed.message;
+        else transcriptText = transcript;
+      } catch {
+        transcriptText = transcript;
+      }
+    }
     // Handle object transcripts
     else if (transcript && typeof transcript === 'object') {
-      // Try different common properties
       const obj = transcript as any;
+      
+      // Try accessing various properties directly
       if (typeof obj.text === 'string') {
         transcriptText = obj.text;
       } else if (typeof obj.transcript === 'string') {
@@ -113,19 +180,28 @@ const App: React.FC = () => {
         transcriptText = obj.content;
       } else if (typeof obj.message === 'string') {
         transcriptText = obj.message;
+      } else if (typeof obj.value === 'string') {
+        transcriptText = obj.value;
+      } else if (typeof obj.userTranscript === 'string') {
+        transcriptText = obj.userTranscript;
+      } else if (typeof obj.data === 'string') {
+        transcriptText = obj.data;
+      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
+        transcriptText = obj.data.text;
       } else {
-        // Last resort: stringify the object
+        // Last resort: stringify the object but avoid [object Object]
         try {
-          transcriptText = JSON.stringify(transcript);
-          if (transcriptText === '{}' || transcriptText === '[object Object]') {
-            return; // Skip empty objects
+          const jsonString = JSON.stringify(obj);
+          if (jsonString !== '{}' && jsonString !== '[object Object]') {
+            transcriptText = jsonString;
           }
         } catch (e) {
           console.error("Failed to stringify transcript:", e);
-          return; // Skip on error
         }
       }
     }
+    
+    console.log("Extracted user transcript:", transcriptText);
     
     // Skip empty transcripts
     if (!transcriptText || !transcriptText.trim()) {
@@ -138,17 +214,19 @@ const App: React.FC = () => {
       return;
     }
     
-    console.log("User transcript:", transcriptText);
-    sentMessages.current.add(msgKey);
-    
     // Add the message with a unique ID
     const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    sentMessages.current.add(msgKey);
     setUserTranscript(prev => [...prev, transcriptText]);
-    setMessages(prev => [...prev, { 
-      role: "user", 
-      content: transcriptText,
-      id: msgId 
-    }]);
+    
+    // Use setTimeout to ensure state updates don't conflict
+    setTimeout(() => {
+      setMessages(prev => [...prev, { 
+        role: "user", 
+        content: transcriptText,
+        id: msgId 
+      }]);
+    }, 10);
   });
 
   useVoiceClientEvent(
@@ -193,6 +271,7 @@ const App: React.FC = () => {
             height={50}
             className="h-10 w-auto"
             priority
+            unoptimized
           />
           <div className="h-6 w-px bg-gray-300 mx-2"></div>
           <h1 className="text-xl font-bold text-blue-800">Dr. Riya</h1>
@@ -236,6 +315,26 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
+          
+          {/* Debug view of raw transcripts if enabled */}
+          {debugMode && (
+            <div className="mt-6 p-3 border border-dashed border-gray-300 rounded bg-gray-50">
+              <h3 className="text-sm font-semibold mb-2">Bot Transcripts (Debug):</h3>
+              <ul className="text-xs text-gray-600">
+                {botTranscript.map((item, i) => (
+                  <li key={`bot-${i}`} className="mb-1">• {item}</li>
+                ))}
+              </ul>
+              
+              <h3 className="text-sm font-semibold mt-3 mb-2">User Transcripts (Debug):</h3>
+              <ul className="text-xs text-gray-600">
+                {userTranscript.map((item, i) => (
+                  <li key={`user-${i}`} className="mb-1">• {item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
       </div>
