@@ -155,7 +155,7 @@ const App: React.FC = () => {
         
         <div className="w-full max-w-md mt-4 text-center">
           <p className="text-xs text-gray-500">
-            Cadabam's Consult - Available Monday to Saturday, 9 AM to 7 PM
+            Cadabam&apos;s Consult - Available Monday to Saturday, 9 AM to 7 PM
           </p>
         </div>
       </div>
