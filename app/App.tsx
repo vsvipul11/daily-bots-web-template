@@ -5,7 +5,7 @@ import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
 import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
 import Image from "next/image";
 import { Mic, MicOff, Loader2, Calendar, Video } from "lucide-react";
-import { CalComService } from "./lib/calComService";
+import { CalComService } from "@/lib/calComService";
 
 // Function to format date string
 const formatDate = (dateString: string) => {
@@ -419,7 +419,7 @@ const App: React.FC = () => {
             />
           </div>
           <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">
-            Welcome to Dr. Riya's Consultation
+            Welcome to Dr. Riya&apos;s Consultation
           </h2>
           <p className="text-gray-600 mb-6 text-center">
             Please provide your information to continue
@@ -455,7 +455,7 @@ const App: React.FC = () => {
                 required
               />
               <p className="mt-1 text-xs text-gray-500">
-                We'll send your appointment details to this email
+                We&apos;ll send your appointment details to this email
               </p>
             </div>
             
@@ -488,7 +488,7 @@ const App: React.FC = () => {
           <div className="h-6 w-px bg-gray-300 mx-2"></div>
           <h1 className="text-xl font-bold text-blue-800">Dr. Riya</h1>
         </div>
-<div className="bg-blue-100 px-3 py-1 rounded-full text-sm text-blue-800 font-medium">
+        <div className="bg-blue-100 px-3 py-1 rounded-full text-sm text-blue-800 font-medium">
           AI Mental Health Assistant
         </div>
       </div>
