@@ -1,11 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
-import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
-import Image from "next/image";
-import { Mic, MicOff, Loader2, Calendar, Video } from "lucide-react";
-import { CalComService } from "./lib/calComService";
+import { RTVIClient } from "@pipecat-ai/client-js";
+import { Mic, MicOff, Loader2, Calendar, MapPin } from "lucide-react";
 
 // Function to format date string
 const formatDate = (dateString: string) => {
@@ -37,30 +34,52 @@ const formatTime = (timeString: string) => {
   }
 };
 
-const App: React.FC = () => {
-  const voiceClient = useVoiceClient();
+interface AppProps {
+  voiceClient: RTVIClient;
+}
+
+const App: React.FC<AppProps> = ({ voiceClient }) => {
   const [error, setError] = useState<string | null>(null);
   const [userTranscript, setUserTranscript] = useState<string[]>([]);
   const [botTranscript, setBotTranscript] = useState<string[]>([]);
-  const [state, setState] = useState<TransportState>("idle");
-  const [isActive, setIsActive] = useState(false);
+  const [isCallActive, setIsCallActive] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const [showEmailInput, setShowEmailInput] = useState<boolean>(true);
   
-  // Tracking appointment data
-  const [symptoms, setSymptoms] = useState<Array<{symptom: string, severity: string, duration: string}>>([]);
-  const [appointment, setAppointment] = useState<{date: string, time: string, confirmed: boolean} | null>(null);
-  const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
+  // Tracking patient data
+  const [symptoms, setSymptoms] = useState<Array<{
+    location: string, 
+    duration?: string, 
+    severity?: string,
+    pattern?: string,
+    triggers?: string
+  }>>([]);
   
-  // Add direct rendering of transcript arrays for debugging
+  const [appointment, setAppointment] = useState<{
+    appointmentType: string,
+    location?: string,
+    date: string, 
+    time: string, 
+    confirmed: boolean,
+    fee: string
+  } | null>(null);
+  
+  const [existingAppointments, setExistingAppointments] = useState<any[]>([]);
+  
+  // For preventing function call data from appearing in messages
+  const [processingFunctionCall, setProcessingFunctionCall] = useState(false);
+  const lastFunctionCallRef = useRef<string | null>(null);
+  
+  // Debug mode
   const debugMode = false; // Set to true to see raw transcripts
 
   // Track conversation messages with unique IDs
   const [messages, setMessages] = useState<Array<{role: string, content: string, id: string}>>([
     {
       role: "assistant",
-      content: "Hello, I'm Dr. Riya from Physiotattva. How can I help you today?",
+      content: "Hi, this is Dr. Riya from Physiotattva. How can I assist you today?",
       id: "welcome-message"
     }
   ]);
@@ -79,13 +98,6 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Add basic initialization logging
-  useEffect(() => {
-    if (voiceClient) {
-      console.log("VoiceClient initialized successfully");
-    }
-  }, [voiceClient]);
-
   // Function to handle email submission
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,332 +106,181 @@ const App: React.FC = () => {
     }
   };
 
-  // Function to process function calls from the LLM
-  const processFunctionCall = async (functionCall: string) => {
-    try {
-      // Extract function name and arguments
-      const functionMatch = functionCall.match(/<function=(.+?)>(.+?)<\/function>/);
-      if (!functionMatch) return;
+  useEffect(() => {
+    if (!voiceClient) return;
 
-      const [, functionName, argsString] = functionMatch;
-      const args = JSON.parse(argsString);
-
-      console.log(`Processing function call: ${functionName}`, args);
-
-      if (functionName === "record_symptoms" && args.symptoms) {
-        // Record symptoms
-        setSymptoms(args.symptoms);
-        return { success: true, symptoms: args.symptoms };
-      } 
-      else if (functionName === "book_appointment") {
-        // Book appointment
-        const { date, time, email, name, concerns } = args;
+    // Set up event listeners for voice client
+    const handleBotUtterance = (text: string) => {
+      console.log("Bot utterance:", text);
+      
+      // Ignore if processing function call
+      if (processingFunctionCall) {
+        console.log("Ignoring bot utterance during function call processing");
+        return;
+      }
+      
+      // Check if this is a function call
+      const functionMatch = text.match(/<function=(.+?)>(.+?)<\/function>/);
+      if (functionMatch) {
+        // Process function call
+        setProcessingFunctionCall(true);
+        lastFunctionCallRef.current = text;
         
-        // Update local state
-        setAppointment({
-          date,
-          time,
-          confirmed: false
-        });
+        // Handle function call message (don't display to user)
+        const [, functionName, argsString] = functionMatch;
         
         try {
-          // Create appointment with Cal.com
-          const calComService = CalComService.getInstance();
-          const result = await calComService.createEvent(
-            date,
-            time,
-            email || userEmail,
-            name || userName,
-            concerns || ""
-          );
+          const args = JSON.parse(argsString);
           
-          // Update state with confirmed appointment
-          setAppointment({
-            date,
-            time,
-            confirmed: true
-          });
-          
-          // Extract meeting URL from booking response
-          if (result.references) {
-            const meetingRef = result.references.find(
-              (ref: any) => ref.type === "google_meet_video"
-            );
-            if (meetingRef && meetingRef.meetingUrl) {
-              setMeetingUrl(meetingRef.meetingUrl);
-            }
+          if (functionName === "record_symptoms" && args.symptoms) {
+            setSymptoms(args.symptoms);
+          }
+          else if (functionName === "book_appointment") {
+            const { appointmentType, location, date, time } = args;
+            const fee = appointmentType === "online" ? "99 INR" : "499 INR";
+            
+            setAppointment({
+              appointmentType,
+              location: location || "Online",
+              date,
+              time,
+              confirmed: true,
+              fee
+            });
+          }
+          else if (functionName === "lookup_appointment") {
+            setExistingAppointments([
+              {
+                appointmentType: "online",
+                date: "2025-03-15",
+                time: "10:30",
+                confirmed: true
+              }
+            ]);
           }
           
-          return { 
-            success: true, 
-            appointment: { 
-              date, 
-              time, 
-              email: email || userEmail,
-              meetingUrl: meetingUrl || "Video link will be sent via email"
-            } 
-          };
+          // Clear function call processing state after a delay
+          setTimeout(() => {
+            setProcessingFunctionCall(false);
+          }, 100);
+          
         } catch (error) {
-          console.error("Failed to book appointment:", error);
-          return { 
-            success: false, 
-            error: "Failed to book appointment. Please try again."
-          };
+          console.error("Error processing function call:", error);
+          setProcessingFunctionCall(false);
         }
+        
+        return;
       }
-    } catch (error) {
-      console.error("Error processing function call:", error);
-      return { success: false, error: "Failed to process function call" };
+      
+      // Check if this matches a recent function call
+      if (lastFunctionCallRef.current && text.includes(lastFunctionCallRef.current.substring(0, 20))) {
+        console.log("Skipping function call that appears in message");
+        return;
+      }
+      
+      // Add bot message
+      const msgKey = `bot-${text}`;
+      if (!sentMessages.current.has(msgKey)) {
+        sentMessages.current.add(msgKey);
+        const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        
+        setBotTranscript(prev => [...prev, text]);
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: text,
+          id: msgId 
+        }]);
+      }
+    };
+
+    const handleUserUtterance = (text: string) => {
+      console.log("User utterance:", text);
+      
+      // Ignore if processing function call
+      if (processingFunctionCall) {
+        console.log("Ignoring user utterance during function call processing");
+        return;
+      }
+      
+      // Add user message
+      const msgKey = `user-${text}`;
+      if (!sentMessages.current.has(msgKey)) {
+        sentMessages.current.add(msgKey);
+        const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        
+        setUserTranscript(prev => [...prev, text]);
+        setMessages(prev => [...prev, { 
+          role: "user", 
+          content: text,
+          id: msgId 
+        }]);
+      }
+    };
+
+    // Register event listeners
+    voiceClient.on("botUtterance", handleBotUtterance);
+    voiceClient.on("userUtterance", handleUserUtterance);
+    
+    voiceClient.on("connecting", () => setIsConnecting(true));
+    voiceClient.on("connected", () => {
+      setIsConnecting(false);
+      setIsCallActive(true);
+    });
+    voiceClient.on("disconnected", () => {
+      setIsConnecting(false);
+      setIsCallActive(false);
+      // Reset tracking
+      sentMessages.current.clear();
+    });
+    voiceClient.on("error", (error) => {
+      setError(error.message || "An unknown error occurred");
+      setIsConnecting(false);
+      setIsCallActive(false);
+    });
+
+    // Cleanup
+    return () => {
+      voiceClient.off("botUtterance", handleBotUtterance);
+      voiceClient.off("userUtterance", handleUserUtterance);
+      voiceClient.off("connecting");
+      voiceClient.off("connected");
+      voiceClient.off("disconnected");
+      voiceClient.off("error");
+    };
+  }, [voiceClient, processingFunctionCall]);
+
+  const startCall = async () => {
+    if (!voiceClient || !userEmail || !userName) return;
+    
+    try {
+      setIsConnecting(true);
+      await voiceClient.connect();
+    } catch (error: any) {
+      setError(error.message || "Failed to start call");
+      setIsConnecting(false);
     }
   };
 
-  useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript: any) => {
-    // Extract text content from the transcript
-    console.log("Raw bot transcript received:", transcript);
-    
-    let transcriptText = '';
-    let functionCall = null;
-    
-    // Handle string transcripts
-    if (typeof transcript === 'string') {
-      transcriptText = transcript;
-      
-      // Check for function calls in the transcript
-      const functionMatch = transcript.match(/<function=(.+?)>(.+?)<\/function>/);
-      if (functionMatch) {
-        functionCall = transcript;
-        // Don't display function calls to the user
-        transcriptText = "";
-      }
-      
-      // Try to parse JSON strings if no function call
-      if (!functionCall && transcript.startsWith('{')) {
-        try {
-          const parsed = JSON.parse(transcript);
-          if (parsed && typeof parsed === 'object') {
-            if (parsed.text) transcriptText = parsed.text;
-            else if (parsed.transcript) transcriptText = parsed.transcript;
-            else if (parsed.content) transcriptText = parsed.content;
-            else if (parsed.message) transcriptText = parsed.message;
-          }
-        } catch (e) {
-          // If parsing fails, keep original string
-          console.log("JSON parse failed, using original string");
-        }
-      }
-    } 
-    // Handle object transcripts
-    else if (transcript && typeof transcript === 'object') {
-      // Try accessing various properties directly
-      const obj = transcript as Record<string, any>;
-      
-      // Check for function calls in object format
-      if (obj.functionCall || obj.function_call || obj.tool_calls) {
-        functionCall = JSON.stringify(obj.functionCall || obj.function_call || obj.tool_calls);
-        // Don't display function calls to the user
-        transcriptText = "";
-      } else {
-        if (typeof obj.text === 'string') {
-          transcriptText = obj.text;
-        } else if (typeof obj.transcript === 'string') {
-          transcriptText = obj.transcript;
-        } else if (typeof obj.content === 'string') {
-          transcriptText = obj.content;
-        } else if (typeof obj.message === 'string') {
-          transcriptText = obj.message;
-        } else if (typeof obj.value === 'string') {
-          transcriptText = obj.value;
-        } else if (typeof obj.botTranscript === 'string') {
-          transcriptText = obj.botTranscript;
-        } else if (typeof obj.data === 'string') {
-          transcriptText = obj.data;
-        } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
-          transcriptText = obj.data.text;
-        } else {
-          // Last resort: stringify the object but avoid [object Object]
-          try {
-            const jsonString = JSON.stringify(obj);
-            if (jsonString !== '{}' && jsonString !== '[object Object]') {
-              transcriptText = jsonString;
-            }
-          } catch (e) {
-            console.error("Failed to stringify transcript:", e);
-          }
-        }
-      }
-    }
-    
-    // Process function calls if present
-    if (functionCall) {
-      processFunctionCall(functionCall).then(result => {
-        console.log("Function call result:", result);
-      });
-    }
-    
-    console.log("Extracted bot transcript:", transcriptText);
-    
-    // Skip empty transcripts
-    if (!transcriptText || !transcriptText.trim()) {
-      return;
-    }
-    
-    // Deduplicate identical messages
-    const msgKey = `bot-${transcriptText}`;
-    if (sentMessages.current.has(msgKey)) {
-      return;
-    }
-    
-    // Add the message with a unique ID
-    const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    sentMessages.current.add(msgKey);
-    setBotTranscript(prev => [...prev, transcriptText]);
-    
-    // Use setTimeout to ensure state updates don't conflict
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: transcriptText,
-        id: msgId 
-      }]);
-    }, 10);
-  });
-
-  useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript: any) => {
-    // Extract text content from the transcript
-    console.log("Raw user transcript received:", transcript);
-    
-    let transcriptText = '';
-    
-    // Handle string transcripts
-    if (typeof transcript === 'string') {
-      transcriptText = transcript;
-      
-      // Try to parse JSON strings
-      if (transcript.startsWith('{')) {
-        try {
-          const parsed = JSON.parse(transcript);
-          if (parsed && typeof parsed === 'object') {
-            if (parsed.text) transcriptText = parsed.text;
-            else if (parsed.transcript) transcriptText = parsed.transcript;
-            else if (parsed.content) transcriptText = parsed.content;
-            else if (parsed.message) transcriptText = parsed.message;
-          }
-        } catch (e) {
-          // If parsing fails, keep original string
-          console.log("JSON parse failed, using original string");
-        }
-      }
-    } 
-    // Handle object transcripts
-    else if (transcript && typeof transcript === 'object') {
-      // Try accessing various properties directly
-      const obj = transcript as Record<string, any>;
-      
-      if (typeof obj.text === 'string') {
-        transcriptText = obj.text;
-      } else if (typeof obj.transcript === 'string') {
-        transcriptText = obj.transcript;
-      } else if (typeof obj.content === 'string') {
-        transcriptText = obj.content;
-      } else if (typeof obj.message === 'string') {
-        transcriptText = obj.message;
-      } else if (typeof obj.value === 'string') {
-        transcriptText = obj.value;
-      } else if (typeof obj.userTranscript === 'string') {
-        transcriptText = obj.userTranscript;
-      } else if (typeof obj.data === 'string') {
-        transcriptText = obj.data;
-      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
-        transcriptText = obj.data.text;
-      } else {
-        // Last resort: stringify the object but avoid [object Object]
-        try {
-          const jsonString = JSON.stringify(obj);
-          if (jsonString !== '{}' && jsonString !== '[object Object]') {
-            transcriptText = jsonString;
-          }
-        } catch (e) {
-          console.error("Failed to stringify transcript:", e);
-        }
-      }
-    }
-    
-    console.log("Extracted user transcript:", transcriptText);
-    
-    // Skip empty transcripts
-    if (!transcriptText || !transcriptText.trim()) {
-      return;
-    }
-    
-    // Deduplicate identical messages
-    const msgKey = `user-${transcriptText}`;
-    if (sentMessages.current.has(msgKey)) {
-      return;
-    }
-    
-    // Add the message with a unique ID
-    const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    sentMessages.current.add(msgKey);
-    setUserTranscript(prev => [...prev, transcriptText]);
-    
-    // Use setTimeout to ensure state updates don't conflict
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: "user", 
-        content: transcriptText,
-        id: msgId 
-      }]);
-    }, 10);
-  });
-
-  useVoiceClientEvent(
-    VoiceEvent.TransportStateChanged,
-    (state: TransportState) => {
-      setState(state);
-      if (state === "connected") {
-        setIsActive(true);
-      } else if (state === "idle") {
-        setIsActive(false);
-        // Clear the sent messages cache when ending a session
-        sentMessages.current.clear();
-      }
-    }
-  );
-
-  async function start() {
-    if (!voiceClient || !userEmail || !userName) return;
-    try {
-      await voiceClient.start();
-    } catch (e) {
-      setError((e as VoiceError).message || "Unknown error occurred");
-      voiceClient.disconnect();
-    }
-  }
-
-  async function disconnect() {
+  const endCall = async () => {
     if (!voiceClient) return;
-    await voiceClient.disconnect();
-    // Keep the messages to maintain conversation history
-  }
+    
+    try {
+      await voiceClient.disconnect();
+    } catch (error: any) {
+      setError(error.message || "Failed to end call");
+    }
+  };
 
   // Email collection form
   if (showEmailInput) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
         <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
           <div className="flex items-center justify-center mb-6">
-            <Image 
-              src="https://via.placeholder.com/200x60" 
-              alt="Physiotattva Logo"
-              width={200}
-              height={60}
-              className="h-12 w-auto"
-              unoptimized
-              priority
-            />
+            <div className="text-3xl font-bold text-blue-700">Physiotattva</div>
           </div>
           <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">
-            Welcome to Dr. Riya&apos;s Consultation
+            Welcome to Dr. Riya&apos;s Physiotherapy Consultation
           </h2>
           <p className="text-gray-600 mb-6 text-center">
             Please provide your information to continue
@@ -472,28 +333,20 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto px-4">
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto">
       {/* Header */}
       <div className="w-full bg-white shadow-md rounded-lg p-4 mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Image 
-            src="https://via.placeholder.com/150x50" 
-            alt="Physiotattva Logo"
-            width={150}
-            height={50}
-            className="h-10 w-auto"
-            priority
-            unoptimized
-          />
+          <div className="text-2xl font-bold text-blue-700">Physiotattva</div>
           <div className="h-6 w-px bg-gray-300 mx-2"></div>
           <h1 className="text-xl font-bold text-blue-800">Dr. Riya</h1>
         </div>
         <div className="bg-blue-100 px-3 py-1 rounded-full text-sm text-blue-800 font-medium">
-          AI Physiotherapy Assistant
+          Physiotherapy Assistant
         </div>
       </div>
 
-      <div className="flex w-full gap-6 flex-col md:flex-row">
+      <div className="flex w-full gap-6">
         {/* Main conversation area */}
         <div className="flex-1">
           {/* Error message */}
@@ -504,7 +357,7 @@ const App: React.FC = () => {
           )}
 
           {/* Conversation area */}
-              <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
+          <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
             <div className="flex flex-col gap-3">
               {messages.map((message) => (
                 <div 
@@ -522,7 +375,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               ))}
-              {state === "connecting" && (
+              {isConnecting && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-lg p-3 rounded-bl-none flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
@@ -557,47 +410,47 @@ const App: React.FC = () => {
           {/* Control Panel */}
           <div className="w-full bg-white border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-4">
             <div className="text-center text-sm text-gray-500 mb-2">
-              {state === "idle" 
+              {!isCallActive && !isConnecting
                 ? "Click the button below to start talking with Dr. Riya"
-                : state === "connecting" 
+                :isConnecting
                   ? "Connecting to Dr. Riya..."
-                  : state === "connected" 
+                  : isCallActive 
                     ? "Dr. Riya is listening..."
                     : "Processing your request..."}
             </div>
             
             <button
-              onClick={() => (state === "idle" ? start() : disconnect())}
+              onClick={() => (isCallActive ? endCall() : startCall())}
               className={`relative inline-flex items-center justify-center rounded-full w-16 h-16 transition-all duration-300 ${
-                isActive 
+                isCallActive 
                   ? "bg-red-500 hover:bg-red-600" 
                   : "bg-blue-600 hover:bg-blue-700"
               } shadow-lg hover:shadow-xl`}
-              disabled={state === "connecting"}
+              disabled={isConnecting}
             >
-              {state === "connecting" ? (
+              {isConnecting ? (
                 <Loader2 className="h-6 w-6 animate-spin text-white" />
-              ) : isActive ? (
+              ) : isCallActive ? (
                 <MicOff className="h-6 w-6 text-white" />
               ) : (
                 <Mic className="h-6 w-6 text-white" />
               )}
               
               <span className="absolute -bottom-8 text-sm font-medium text-gray-700">
-                {isActive ? "End Call" : "Start Call"}
+                {isCallActive ? "End Call" : "Start Call"}
               </span>
             </button>
             
             <div className="w-full max-w-md mt-4 text-center">
               <p className="text-xs text-gray-500">
-                Physiotattva - Available Monday to Saturday, 9 AM to 7 PM
+                Physiotattva - Available Monday to Saturday, 8 AM to 8 PM
               </p>
             </div>
           </div>
         </div>
 
         {/* Right side panel with consultation information */}
-        <div className="w-full md:w-80 shrink-0">
+        <div className="w-80 shrink-0">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 sticky top-4">
             <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200">
               Consultation Details
@@ -617,10 +470,20 @@ const App: React.FC = () => {
                 <div className="space-y-2">
                   {symptoms.map((symptom, index) => (
                     <div key={index} className="bg-gray-50 p-3 rounded-md">
-                      <p className="font-medium text-gray-800">{symptom.symptom}</p>
-                      <div className="flex justify-between mt-1 text-sm">
-                        <span className="text-gray-500">Severity: {symptom.severity}</span>
-                        <span className="text-gray-500">Duration: {symptom.duration}</span>
+                      <p className="font-medium text-gray-800">{symptom.location}</p>
+                      <div className="mt-1 text-sm space-y-1">
+                        {symptom.duration && (
+                          <div className="text-gray-500">Duration: {symptom.duration}</div>
+                        )}
+                        {symptom.severity && (
+                          <div className="text-gray-500">Severity: {symptom.severity}</div>
+                        )}
+                        {symptom.pattern && (
+                          <div className="text-gray-500">Pattern: {symptom.pattern}</div>
+                        )}
+                        {symptom.triggers && (
+                          <div className="text-gray-500">Triggers: {symptom.triggers}</div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -641,8 +504,19 @@ const App: React.FC = () => {
                       {formatDate(appointment.date)}
                     </span>
                   </div>
-                  <p className="text-gray-700">
+                  <p className="text-gray-700 mb-1">
                     Time: {formatTime(appointment.time)}
+                  </p>
+                  <div className="flex items-start gap-2 mb-3">
+                    <MapPin className="h-4 w-4 mt-0.5 text-blue-600" />
+                    <span className="text-gray-700">
+                      {appointment.appointmentType === "online" 
+                        ? "Online consultation" 
+                        : `In-person at ${appointment.location}`}
+                    </span>
+                  </div>
+                  <p className="text-gray-700 font-medium">
+                    Fee: {appointment.fee}
                   </p>
                   
                   {appointment.confirmed && (
@@ -656,23 +530,32 @@ const App: React.FC = () => {
                         <span className="text-green-700 text-sm">Appointment confirmed</span>
                       </div>
                       
-                      {meetingUrl && (
-                        <a 
-                          href={meetingUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 mt-2 text-sm text-blue-600 hover:underline"
-                        >
-                          <Video className="h-4 w-4" />
-                          Join video consultation
-                        </a>
-                      )}
-                      
                       <p className="text-xs text-gray-500 mt-2">
-                        A calendar invitation has been sent to your email
+                        A confirmation has been sent to your email
                       </p>
                     </div>
                   )}
+                </div>
+              ) : existingAppointments.length > 0 ? (
+                <div className="space-y-3">
+                  {existingAppointments.map((apt, index) => (
+                    <div key={index} className="bg-gray-50 p-3 rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Calendar className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium text-gray-800">
+                          {formatDate(apt.date)}
+                        </span>
+                      </div>
+                      <p className="text-gray-700 text-sm">
+                        Time: {formatTime(apt.time)}
+                      </p>
+                      <p className="text-gray-700 text-sm">
+                        Type: {apt.appointmentType === "online" 
+                          ? "Online consultation" 
+                          : "In-person consultation"}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-gray-500 italic">No appointment scheduled yet</p>
