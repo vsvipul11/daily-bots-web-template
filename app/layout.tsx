@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Dr. Riya - Mental Health Assistant | Cadabam's Consult",
-  description: "Talk to Dr. Riya, an AI mental health assistant from Cadabam's Consult who can help you book appointments and assess your mental health concerns.",
+  title: "Dr. Riya - Mental Health Assistant | Cadabam&apos;s Consult",
+  description: "Talk to Dr. Riya, an AI mental health assistant from Cadabam&apos;s Consult who can help you book appointments and assess your mental health concerns.",
 };
 
 export default function RootLayout({
