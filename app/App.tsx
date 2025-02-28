@@ -504,7 +504,7 @@ const App: React.FC = () => {
           )}
 
           {/* Conversation area */}
-          <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
+              <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
             <div className="flex flex-col gap-3">
               {messages.map((message) => (
                 <div 
@@ -513,7 +513,7 @@ const App: React.FC = () => {
                 >
                   <div 
                     className={`max-w-xs md:max-w-md rounded-lg p-3 ${
-                                       message.role === 'user' 
+                      message.role === 'user' 
                         ? 'bg-blue-600 text-white rounded-br-none' 
                         : 'bg-gray-100 text-gray-800 rounded-bl-none'
                     }`}
