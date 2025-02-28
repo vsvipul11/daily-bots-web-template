@@ -1,49 +1,72 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DailyVoiceClient } from "realtime-ai-daily";
-import { VoiceClientAudio, VoiceClientProvider } from "realtime-ai-react";
+import { RTVIClient } from "@pipecat-ai/client-js";
+import { DailyTransport } from "@pipecat-ai/daily-transport";
 import App from "./App";
-import { defaultConfig } from "./rtvi.config";
-import { LLMHelper } from "realtime-ai";
-import { CalComService } from "./lib/calComService";
+import { geminiConfig } from "./rtvi.config";
+import { LLMHelper } from "@pipecat-ai/client-js";
 
 export default function Home() {
-  const [dailyVoiceClient, setDailyVoiceClient] = useState<DailyVoiceClient | null>(null);
+  const [voiceClient, setVoiceClient] = useState<RTVIClient | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (dailyVoiceClient) {
+    // Only initialize once
+    if (voiceClient) {
       return;
     }
 
-    const voiceClient = new DailyVoiceClient({
-      baseUrl: "/api",
-      services: {
-        llm: "together",
-        tts: "cartesia",
-      },
-      config: [
-        {
-          service: "tts",
-          options: [
-            { name: "voice", value: "79a125e8-cd45-4c13-8a67-188112f4dd22" },
-          ],
-        },
-        ...defaultConfig,
-      ],
-    });
+    async function initializeClient() {
+      try {
+        setIsLoading(true);
+        
+        // Create new RTVI client with Gemini configuration
+        const client = new RTVIClient({
+          transport: new DailyTransport(),
+          params: {
+            baseUrl: `/api`,
+            endpoints: {
+              connect: "/connect",
+              actions: "/actions",
+            },
+            requestData: {
+              services: {
+                stt: "deepgram",
+                tts: "cartesia",
+                llm: "gemini"
+              },
+              config: geminiConfig
+            },
+          },
+          enableMic: true,
+          enableCam: false,
+          callbacks: {
+            onBotReady: () => {
+              console.log("Bot is ready!");
+            },
+          }
+        });
+        
+        // Setup function calling handler
+        setupFunctionCallingHandler(client);
+        
+        setVoiceClient(client);
+      } catch (error) {
+        console.error("Failed to initialize voice client:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
     
-    // Setup function calling handler
-    setupFunctionCallingHandler(voiceClient);
-    
-    setDailyVoiceClient(voiceClient);
-  }, [dailyVoiceClient]);
+    initializeClient();
+  }, [voiceClient]);
 
   // Function to set up function calling with the voiceClient
-  const setupFunctionCallingHandler = (voiceClient: DailyVoiceClient) => {
+  const setupFunctionCallingHandler = (client: RTVIClient) => {
     try {
       // Register LLM helper
-      const llmHelper = voiceClient.registerHelper(
+      const llmHelper = client.registerHelper(
         "llm",
         new LLMHelper({
           callbacks: {},
@@ -60,41 +83,36 @@ export default function Home() {
         
         // Handling book_appointment function
         if (fn.functionName === "book_appointment" && args) {
-          const { date, time, email, name, concerns } = args;
-          
           try {
-            // Get Cal.com service instance
-            const calComService = CalComService.getInstance();
+            // In a real app, you would call your booking API
+            // Here we just simulate a successful booking
+            const { appointmentType, location, date, time, email, name } = args;
+            const fee = appointmentType === "online" ? "99 INR" : "499 INR";
             
-            // Book appointment using Cal.com
-            const booking = await calComService.createEvent(
+            console.log("Booking appointment:", {
+              appointmentType,
+              location: location || "Online",
               date,
               time,
               email,
               name,
-              concerns || ""
-            );
+              fee
+            });
             
-            // Extract meeting URL from booking response
-            let meetingUrl = null;
-            if (booking.references) {
-              const meetingRef = booking.references.find(
-                (ref: any) => ref.type === "google_meet_video"
-              );
-              if (meetingRef && meetingRef.meetingUrl) {
-                meetingUrl = meetingRef.meetingUrl;
-              }
-            }
+            // Simulate API call latency
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             return { 
               success: true, 
-              appointment: {
-                date,
-                time,
+              appointment: { 
+                appointmentType,
+                location: location || "Online",
+                date, 
+                time, 
                 email,
                 name,
-                meetingUrl: meetingUrl || "Video link will be sent via email"
-              }
+                fee
+              } 
             };
           } catch (error) {
             console.error("Failed to book appointment:", error);
@@ -107,8 +125,44 @@ export default function Home() {
         
         // Handling record_symptoms function
         else if (fn.functionName === "record_symptoms" && args) {
-          // Simply pass through the symptoms data
-          return { success: true, symptoms: args.symptoms };
+          try {
+            console.log("Recording symptoms:", args.symptoms);
+            return { success: true, symptoms: args.symptoms };
+          } catch (error) {
+            console.error("Failed to record symptoms:", error);
+            return { 
+              success: false, 
+              error: "Failed to record symptoms."
+            };
+          }
+        }
+        
+        // Handling lookup_appointment function
+        else if (fn.functionName === "lookup_appointment" && args) {
+          try {
+            console.log("Looking up appointments for:", args.email);
+            
+            // Simulate fetching appointments
+            const fakeAppointments = [
+              {
+                appointmentType: "online",
+                date: "2025-03-15",
+                time: "10:30",
+                confirmed: true
+              }
+            ];
+            
+            return {
+              success: true,
+              appointments: fakeAppointments
+            };
+          } catch (error) {
+            console.error("Failed to lookup appointments:", error);
+            return { 
+              success: false, 
+              error: "Failed to find appointments."
+            };
+          }
         }
         
         return null;
@@ -119,19 +173,20 @@ export default function Home() {
   };
 
   return (
-    <VoiceClientProvider voiceClient={dailyVoiceClient!}>
-      <>
-        <main className="flex min-h-screen flex-col bg-gradient-to-b from-blue-50 to-white">
-          <div className="container mx-auto px-4 py-8">
-            {dailyVoiceClient ? <App /> : (
-              <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-              </div>
-            )}
+    <main className="flex min-h-screen flex-col bg-gradient-to-b from-blue-50 to-white">
+      <div className="container mx-auto px-4 py-8">
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           </div>
-        </main>
-        <VoiceClientAudio />
-      </>
-    </VoiceClientProvider>
+        ) : voiceClient ? (
+          <App voiceClient={voiceClient} />
+        ) : (
+          <div className="flex justify-center items-center h-64">
+            <div className="text-red-500">Failed to initialize voice client</div>
+          </div>
+        )}
+      </div>
+    </main>
   );
 }
