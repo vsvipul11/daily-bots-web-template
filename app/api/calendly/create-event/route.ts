@@ -66,10 +66,10 @@ export async function POST(request: Request) {
     };
 
     return NextResponse.json(eventData);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error creating Calendly event:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create appointment' },
+      { error: error instanceof Error ? error.message : 'Failed to create appointment' },
       { status: 500 }
     );
   }
