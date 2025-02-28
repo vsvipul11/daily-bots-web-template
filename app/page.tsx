@@ -123,7 +123,11 @@ export default function Home() {
       <>
         <main className="flex min-h-screen flex-col bg-gradient-to-b from-blue-50 to-white">
           <div className="container mx-auto px-4 py-8">
-            <App />
+            {dailyVoiceClient ? <App /> : (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+              </div>
+            )}
           </div>
         </main>
         <VoiceClientAudio />
