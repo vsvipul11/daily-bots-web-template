@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { RTVIClient } from "@pipecat-ai/client-js";
+import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
+import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
 import { Mic, MicOff, Loader2, Calendar, MapPin } from "lucide-react";
 
 // Function to format date string
@@ -34,16 +35,105 @@ const formatTime = (timeString: string) => {
   }
 };
 
-interface AppProps {
-  voiceClient: RTVIClient;
-}
+// Parse symptom data from transcript
+const parseSymptoms = (text: string): any[] => {
+  const symptoms = [];
+  
+  // Look for pain/discomfort mentions
+  const locationMatches = text.match(/pain in (?:my|the) ([a-z\s]+)/gi);
+  if (locationMatches && locationMatches.length > 0) {
+    locationMatches.forEach(match => {
+      const location = match.replace(/pain in (?:my|the) /i, '').trim();
+      symptoms.push({ location });
+    });
+  }
+  
+  // Look for severity mentions
+  const severityMatch = text.match(/([0-9]|10)(?: out of 10)? (?:pain|severity)/i);
+  if (severityMatch && symptoms.length > 0) {
+    symptoms[symptoms.length - 1].severity = severityMatch[1] + "/10";
+  }
+  
+  // Look for duration
+  const durationMatch = text.match(/(for|since|about) ([a-z0-9\s]+) (days?|weeks?|months?|years?)/i);
+  if (durationMatch && symptoms.length > 0) {
+    symptoms[symptoms.length - 1].duration = durationMatch[0];
+  }
+  
+  return symptoms;
+};
 
-const App: React.FC<AppProps> = ({ voiceClient }) => {
+// Parse appointment data from transcript
+const parseAppointment = (text: string): any | null => {
+  // Online vs in-person
+  let appointmentType = null;
+  if (text.match(/online|virtual|video/i)) {
+    appointmentType = "online";
+  } else if (text.match(/in[\s-]person|office|clinic|centre|center/i)) {
+    appointmentType = "in-person";
+  }
+  
+  // Location for in-person
+  let location = null;
+  if (appointmentType === "in-person") {
+    const locationMatch = text.match(/(?:in|at) (bangalore|hyderabad)/i);
+    if (locationMatch) {
+      location = locationMatch[1];
+    }
+  }
+  
+  // Date
+  let date = null;
+  const dateMatch = text.match(/(monday|tuesday|wednesday|thursday|friday|saturday)/i);
+  if (dateMatch) {
+    // Convert day name to next occurrence
+    const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const today = new Date();
+    const dayIndex = dayNames.findIndex(d => d.toLowerCase() === dateMatch[1].toLowerCase());
+    
+    if (dayIndex !== -1) {
+      const daysUntilNext = (dayIndex - today.getDay() + 7) % 7;
+      const nextDate = new Date();
+      nextDate.setDate(today.getDate() + (daysUntilNext === 0 ? 7 : daysUntilNext));
+      date = nextDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    }
+  }
+  
+  // Time
+  let time = null;
+  const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1]);
+    const minutes = timeMatch[2] ? timeMatch[2] : "00";
+    const period = timeMatch[3].toLowerCase();
+    
+    if (period === "pm" && hours < 12) hours += 12;
+    if (period === "am" && hours === 12) hours = 0;
+    
+    time = `${hours.toString().padStart(2, '0')}:${minutes}`;
+  }
+  
+  if (appointmentType && date && time) {
+    return {
+      appointmentType,
+      location,
+      date,
+      time,
+      confirmed: text.includes("confirm") || text.includes("book"),
+      fee: appointmentType === "online" ? "99 INR" : "499 INR"
+    };
+  }
+  
+  return null;
+};
+
+const App: React.FC = () => {
+  const voiceClient = useVoiceClient();
   const [error, setError] = useState<string | null>(null);
   const [userTranscript, setUserTranscript] = useState<string[]>([]);
   const [botTranscript, setBotTranscript] = useState<string[]>([]);
-  const [isCallActive, setIsCallActive] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [state, setState] = useState<TransportState>("idle");
+  const [isActive, setIsActive] = useState(false);
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const [showEmailInput, setShowEmailInput] = useState<boolean>(true);
@@ -72,7 +162,10 @@ const App: React.FC<AppProps> = ({ voiceClient }) => {
   const [processingFunctionCall, setProcessingFunctionCall] = useState(false);
   const lastFunctionCallRef = useRef<string | null>(null);
   
-  // Debug mode
+  // For tracking context to help parse symptoms and appointments
+  const currentContextRef = useRef<string>("initial"); // "initial", "symptoms", "appointment"
+  
+  // Add direct rendering of transcript arrays for debugging
   const debugMode = false; // Set to true to see raw transcripts
 
   // Track conversation messages with unique IDs
@@ -106,170 +199,213 @@ const App: React.FC<AppProps> = ({ voiceClient }) => {
     }
   };
 
-  useEffect(() => {
-    if (!voiceClient) return;
-
-    // Set up event listeners for voice client
-    const handleBotUtterance = (text: string) => {
-      console.log("Bot utterance:", text);
+  useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript: any) => {
+    // Extract text content from the transcript
+    console.log("Raw bot transcript received:", transcript);
+    
+    let transcriptText = '';
+    
+    // Handle string transcripts
+    if (typeof transcript === 'string') {
+      transcriptText = transcript;
+    } 
+    // Handle object transcripts
+    else if (transcript && typeof transcript === 'object') {
+      // Try accessing various properties directly
+      const obj = transcript as Record<string, any>;
       
-      // Ignore if processing function call
-      if (processingFunctionCall) {
-        console.log("Ignoring bot utterance during function call processing");
-        return;
-      }
-      
-      // Check if this is a function call
-      const functionMatch = text.match(/<function=(.+?)>(.+?)<\/function>/);
-      if (functionMatch) {
-        // Process function call
-        setProcessingFunctionCall(true);
-        lastFunctionCallRef.current = text;
-        
-        // Handle function call message (don't display to user)
-        const [, functionName, argsString] = functionMatch;
-        
+      if (typeof obj.text === 'string') {
+        transcriptText = obj.text;
+      } else if (typeof obj.transcript === 'string') {
+        transcriptText = obj.transcript;
+      } else if (typeof obj.content === 'string') {
+        transcriptText = obj.content;
+      } else if (typeof obj.message === 'string') {
+        transcriptText = obj.message;
+      } else if (typeof obj.value === 'string') {
+        transcriptText = obj.value;
+      } else if (typeof obj.botTranscript === 'string') {
+        transcriptText = obj.botTranscript;
+      } else if (typeof obj.data === 'string') {
+        transcriptText = obj.data;
+      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
+        transcriptText = obj.data.text;
+      } else {
+        // Last resort: stringify the object but avoid [object Object]
         try {
-          const args = JSON.parse(argsString);
-          
-          if (functionName === "record_symptoms" && args.symptoms) {
-            setSymptoms(args.symptoms);
+          const jsonString = JSON.stringify(obj);
+          if (jsonString !== '{}' && jsonString !== '[object Object]') {
+            transcriptText = jsonString;
           }
-          else if (functionName === "book_appointment") {
-            const { appointmentType, location, date, time } = args;
-            const fee = appointmentType === "online" ? "99 INR" : "499 INR";
-            
-            setAppointment({
-              appointmentType,
-              location: location || "Online",
-              date,
-              time,
-              confirmed: true,
-              fee
-            });
-          }
-          else if (functionName === "lookup_appointment") {
-            setExistingAppointments([
-              {
-                appointmentType: "online",
-                date: "2025-03-15",
-                time: "10:30",
-                confirmed: true
-              }
-            ]);
-          }
-          
-          // Clear function call processing state after a delay
-          setTimeout(() => {
-            setProcessingFunctionCall(false);
-          }, 100);
-          
-        } catch (error) {
-          console.error("Error processing function call:", error);
-          setProcessingFunctionCall(false);
+        } catch (e) {
+          console.error("Failed to stringify transcript:", e);
         }
-        
-        return;
       }
-      
-      // Check if this matches a recent function call
-      if (lastFunctionCallRef.current && text.includes(lastFunctionCallRef.current.substring(0, 20))) {
-        console.log("Skipping function call that appears in message");
-        return;
-      }
-      
-      // Add bot message
-      const msgKey = `bot-${text}`;
-      if (!sentMessages.current.has(msgKey)) {
-        sentMessages.current.add(msgKey);
-        const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        
-        setBotTranscript(prev => [...prev, text]);
-        setMessages(prev => [...prev, { 
-          role: "assistant", 
-          content: text,
-          id: msgId 
-        }]);
-      }
-    };
-
-    const handleUserUtterance = (text: string) => {
-      console.log("User utterance:", text);
-      
-      // Ignore if processing function call
-      if (processingFunctionCall) {
-        console.log("Ignoring user utterance during function call processing");
-        return;
-      }
-      
-      // Add user message
-      const msgKey = `user-${text}`;
-      if (!sentMessages.current.has(msgKey)) {
-        sentMessages.current.add(msgKey);
-        const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        
-        setUserTranscript(prev => [...prev, text]);
-        setMessages(prev => [...prev, { 
-          role: "user", 
-          content: text,
-          id: msgId 
-        }]);
-      }
-    };
-
-    // Register event listeners
-    voiceClient.on("botUtterance", handleBotUtterance);
-    voiceClient.on("userUtterance", handleUserUtterance);
+    }
     
-    voiceClient.on("connecting", () => setIsConnecting(true));
-    voiceClient.on("connected", () => {
-      setIsConnecting(false);
-      setIsCallActive(true);
-    });
-    voiceClient.on("disconnected", () => {
-      setIsConnecting(false);
-      setIsCallActive(false);
-      // Reset tracking
-      sentMessages.current.clear();
-    });
-    voiceClient.on("error", (error) => {
-      setError(error.message || "An unknown error occurred");
-      setIsConnecting(false);
-      setIsCallActive(false);
-    });
+    // Skip empty transcripts
+    if (!transcriptText || !transcriptText.trim()) {
+      return;
+    }
+    
+    // Infer the current context from the bot's message
+    if (transcriptText.includes("discomfort") || transcriptText.includes("pain") || 
+        transcriptText.includes("severity") || transcriptText.includes("scale")) {
+      currentContextRef.current = "symptoms";
+    } else if (transcriptText.includes("appointment") || transcriptText.includes("consultation") ||
+               transcriptText.includes("online") || transcriptText.includes("in-person")) {
+      currentContextRef.current = "appointment";
+    }
 
-    // Cleanup
-    return () => {
-      voiceClient.off("botUtterance", handleBotUtterance);
-      voiceClient.off("userUtterance", handleUserUtterance);
-      voiceClient.off("connecting");
-      voiceClient.off("connected");
-      voiceClient.off("disconnected");
-      voiceClient.off("error");
-    };
-  }, [voiceClient, processingFunctionCall]);
+    // Deduplicate identical messages
+    const msgKey = `bot-${transcriptText}`;
+    if (sentMessages.current.has(msgKey)) {
+      return;
+    }
+    
+    // Add the message with a unique ID
+    const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    sentMessages.current.add(msgKey);
+    setBotTranscript(prev => [...prev, transcriptText]);
+    
+    // Use setTimeout to ensure state updates don't conflict
+    setTimeout(() => {
+      setMessages(prev => [...prev, { 
+        role: "assistant", 
+        content: transcriptText,
+        id: msgId 
+      }]);
+    }, 10);
+  });
 
-  const startCall = async () => {
+  useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript: any) => {
+    // Extract text content from the transcript
+    console.log("Raw user transcript received:", transcript);
+    
+    let transcriptText = '';
+    
+    // Handle string transcripts
+    if (typeof transcript === 'string') {
+      transcriptText = transcript;
+    } 
+    // Handle object transcripts
+    else if (transcript && typeof transcript === 'object') {
+      // Try accessing various properties directly
+      const obj = transcript as Record<string, any>;
+      
+      if (typeof obj.text === 'string') {
+        transcriptText = obj.text;
+      } else if (typeof obj.transcript === 'string') {
+        transcriptText = obj.transcript;
+      } else if (typeof obj.content === 'string') {
+        transcriptText = obj.content;
+      } else if (typeof obj.message === 'string') {
+        transcriptText = obj.message;
+      } else if (typeof obj.value === 'string') {
+        transcriptText = obj.value;
+      } else if (typeof obj.userTranscript === 'string') {
+        transcriptText = obj.userTranscript;
+      } else if (typeof obj.data === 'string') {
+        transcriptText = obj.data;
+      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
+        transcriptText = obj.data.text;
+      } else {
+        // Last resort: stringify the object but avoid [object Object]
+        try {
+          const jsonString = JSON.stringify(obj);
+          if (jsonString !== '{}' && jsonString !== '[object Object]') {
+            transcriptText = jsonString;
+          }
+        } catch (e) {
+          console.error("Failed to stringify transcript:", e);
+        }
+      }
+    }
+    
+    console.log("Extracted user transcript:", transcriptText);
+    
+    // Skip empty transcripts
+    if (!transcriptText || !transcriptText.trim()) {
+      return;
+    }
+    
+    // Parse user's message for symptoms or appointments based on context
+    if (currentContextRef.current === "symptoms") {
+      const detectedSymptoms = parseSymptoms(transcriptText);
+      if (detectedSymptoms.length > 0) {
+        console.log("Detected symptoms:", detectedSymptoms);
+        setSymptoms(prev => {
+          // Merge with existing symptoms
+          const existing = [...prev];
+          detectedSymptoms.forEach(symptom => {
+            const existingIndex = existing.findIndex(s => s.location === symptom.location);
+            if (existingIndex >= 0) {
+              existing[existingIndex] = { ...existing[existingIndex], ...symptom };
+            } else {
+              existing.push(symptom);
+            }
+          });
+          return existing;
+        });
+      }
+    } else if (currentContextRef.current === "appointment") {
+      const detectedAppointment = parseAppointment(transcriptText);
+      if (detectedAppointment) {
+        console.log("Detected appointment:", detectedAppointment);
+        setAppointment(detectedAppointment);
+      }
+    }
+    
+    // Deduplicate identical messages
+    const msgKey = `user-${transcriptText}`;
+    if (sentMessages.current.has(msgKey)) {
+      return;
+    }
+    
+    // Add the message with a unique ID
+    const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    sentMessages.current.add(msgKey);
+    setUserTranscript(prev => [...prev, transcriptText]);
+    
+    // Use setTimeout to ensure state updates don't conflict
+    setTimeout(() => {
+      setMessages(prev => [...prev, { 
+        role: "user", 
+        content: transcriptText,
+        id: msgId 
+      }]);
+    }, 10);
+  });
+
+  useVoiceClientEvent(
+    VoiceEvent.TransportStateChanged,
+    (state: TransportState) => {
+      setState(state);
+      if (state === "connected") {
+        setIsActive(true);
+      } else if (state === "idle") {
+        setIsActive(false);
+        // Clear the sent messages cache when ending a session
+        sentMessages.current.clear();
+      }
+    }
+  );
+
+  async function start() {
     if (!voiceClient || !userEmail || !userName) return;
-    
     try {
-      setIsConnecting(true);
-      await voiceClient.connect();
-    } catch (error: any) {
-      setError(error.message || "Failed to start call");
-      setIsConnecting(false);
+      await voiceClient.start();
+    } catch (e) {
+      setError((e as VoiceError).message || "Unknown error occurred");
+      voiceClient.disconnect();
     }
-  };
+  }
 
-  const endCall = async () => {
+  async function disconnect() {
     if (!voiceClient) return;
-    
-    try {
-      await voiceClient.disconnect();
-    } catch (error: any) {
-      setError(error.message || "Failed to end call");
-    }
-  };
+    await voiceClient.disconnect();
+    // Keep the messages to maintain conversation history
+  }
 
   // Email collection form
   if (showEmailInput) {
@@ -375,7 +511,7 @@ const App: React.FC<AppProps> = ({ voiceClient }) => {
                   </div>
                 </div>
               ))}
-              {isConnecting && (
+              {state === "connecting" && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-lg p-3 rounded-bl-none flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
@@ -410,34 +546,34 @@ const App: React.FC<AppProps> = ({ voiceClient }) => {
           {/* Control Panel */}
           <div className="w-full bg-white border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-4">
             <div className="text-center text-sm text-gray-500 mb-2">
-              {!isCallActive && !isConnecting
+              {state === "idle" 
                 ? "Click the button below to start talking with Dr. Riya"
-                :isConnecting
+                : state === "connecting" 
                   ? "Connecting to Dr. Riya..."
-                  : isCallActive 
+                  : state === "connected" 
                     ? "Dr. Riya is listening..."
-                    : "Processing your request..."}
+                : "Processing your request..."}
             </div>
             
             <button
-              onClick={() => (isCallActive ? endCall() : startCall())}
+              onClick={() => (state === "idle" ? start() : disconnect())}
               className={`relative inline-flex items-center justify-center rounded-full w-16 h-16 transition-all duration-300 ${
-                isCallActive 
+                isActive 
                   ? "bg-red-500 hover:bg-red-600" 
                   : "bg-blue-600 hover:bg-blue-700"
               } shadow-lg hover:shadow-xl`}
-              disabled={isConnecting}
+              disabled={state === "connecting"}
             >
-              {isConnecting ? (
+              {state === "connecting" ? (
                 <Loader2 className="h-6 w-6 animate-spin text-white" />
-              ) : isCallActive ? (
+              ) : isActive ? (
                 <MicOff className="h-6 w-6 text-white" />
               ) : (
                 <Mic className="h-6 w-6 text-white" />
               )}
               
               <span className="absolute -bottom-8 text-sm font-medium text-gray-700">
-                {isCallActive ? "End Call" : "Start Call"}
+                {isActive ? "End Call" : "Start Call"}
               </span>
             </button>
             
