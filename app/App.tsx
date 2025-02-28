@@ -46,16 +46,8 @@ const App: React.FC = () => {
     if (voiceClient) {
       console.log("VoiceClient initialized successfully");
       
-      // Register any additional event listeners here
-      const handleLog = (message: any) => {
-        console.log("Daily voice log:", message);
-      };
-      
-      voiceClient.on('log', handleLog);
-      
-      return () => {
-        voiceClient.off('log', handleLog);
-      };
+      // Register listeners using the proper event types
+      // Note: Removed custom 'log' event since it's not in the supported event list
     }
   }, [voiceClient]);
 
