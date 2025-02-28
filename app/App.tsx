@@ -33,9 +33,18 @@ const formatTime = (timeString: string) => {
   }
 };
 
+// Define a proper type for symptoms
+interface Symptom {
+  location: string;
+  severity?: string;
+  duration?: string;
+  pattern?: string;
+  triggers?: string;
+}
+
 // Parse symptom data from transcript
-const parseSymptoms = (text: string): any[] => {
-  const symptoms = [];
+const parseSymptoms = (text: string): Symptom[] => {
+  const symptoms: Symptom[] = [];
   
   // Look for pain/discomfort mentions
   const locationMatches = text.match(/pain in (?:my|the) ([a-z\s]+)/gi);
@@ -60,7 +69,6 @@ const parseSymptoms = (text: string): any[] => {
   
   return symptoms;
 };
-
 // Parse appointment data from transcript
 const parseAppointment = (text: string): any | null => {
   // Online vs in-person
