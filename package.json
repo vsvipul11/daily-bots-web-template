@@ -15,7 +15,10 @@
     "realtime-ai": "^0.1.6",
     "realtime-ai-daily": "^0.1.6",
      "lucide-react": "^0.462.0",
-    "realtime-ai-react": "^0.1.6"
+    "realtime-ai-react": "^0.1.6",
+     "@pipecat-ai/client-js": "^0.4.1",
+    "@pipecat-ai/daily-next": "^0.4.1",
+    "@pipecat-ai/daily-transport": "^0.4.1",
   },
   "devDependencies": {
     "@types/node": "^20",
