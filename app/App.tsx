@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
 import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
 import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
@@ -21,16 +23,18 @@ const App: React.FC = () => {
   ]);
 
   useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript) => {
-    if (transcript.trim()) {
-      setBotTranscript((prev) => [...prev, transcript]);
-      setMessages(prev => [...prev, { role: "assistant", content: transcript }]);
+    const transcriptText = String(transcript);
+    if (transcriptText && transcriptText.trim()) {
+      setBotTranscript((prev) => [...prev, transcriptText]);
+      setMessages(prev => [...prev, { role: "assistant", content: transcriptText }]);
     }
   });
 
   useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript) => {
-    if (transcript.trim()) {
-      setUserTranscript((prev) => [...prev, transcript]);
-      setMessages(prev => [...prev, { role: "user", content: transcript }]);
+    const transcriptText = String(transcript);
+    if (transcriptText && transcriptText.trim()) {
+      setUserTranscript((prev) => [...prev, transcriptText]);
+      setMessages(prev => [...prev, { role: "user", content: transcriptText }]);
     }
   });
 
