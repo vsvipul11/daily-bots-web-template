@@ -23,13 +23,30 @@ const App: React.FC = () => {
   ]);
 
   useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript) => {
-    // Handle transcript as string or object
+    // Extract text from transcript object
     let transcriptText = '';
     if (typeof transcript === 'string') {
       transcriptText = transcript;
     } else if (transcript && typeof transcript === 'object') {
-      transcriptText = String(transcript);
+      // Try to access common transcript properties
+      if (transcript.text) {
+        transcriptText = transcript.text;
+      } else if (transcript.transcript) {
+        transcriptText = transcript.transcript;
+      } else if (transcript.content) {
+        transcriptText = transcript.content;
+      } else {
+        // Fallback to JSON stringify but avoid [object Object]
+        try {
+          const jsonStr = JSON.stringify(transcript);
+          transcriptText = jsonStr !== "[object Object]" ? jsonStr : ""; 
+        } catch (e) {
+          transcriptText = String(transcript);
+        }
+      }
     }
+    
+    console.log("Bot transcript received:", transcriptText);
     
     if (transcriptText && transcriptText.trim()) {
       setBotTranscript((prev) => [...prev, transcriptText]);
@@ -38,13 +55,30 @@ const App: React.FC = () => {
   });
 
   useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript) => {
-    // Handle transcript as string or object
+    // Extract text from transcript object
     let transcriptText = '';
     if (typeof transcript === 'string') {
       transcriptText = transcript;
     } else if (transcript && typeof transcript === 'object') {
-      transcriptText = String(transcript);
+      // Try to access common transcript properties
+      if (transcript.text) {
+        transcriptText = transcript.text;
+      } else if (transcript.transcript) {
+        transcriptText = transcript.transcript;
+      } else if (transcript.content) {
+        transcriptText = transcript.content;
+      } else {
+        // Fallback to JSON stringify but avoid [object Object]
+        try {
+          const jsonStr = JSON.stringify(transcript);
+          transcriptText = jsonStr !== "[object Object]" ? jsonStr : "";
+        } catch (e) {
+          transcriptText = String(transcript);
+        }
+      }
     }
+    
+    console.log("User transcript received:", transcriptText);
     
     if (transcriptText && transcriptText.trim()) {
       setUserTranscript((prev) => [...prev, transcriptText]);
@@ -111,22 +145,50 @@ const App: React.FC = () => {
       {/* Conversation area */}
       <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
         <div className="flex flex-col gap-4">
-          {messages.map((message, idx) => (
-            <div 
-              key={idx} 
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+          {messages.map((message, idx) => {
+            // Determine the content to display
+            let displayContent = '';
+            if (typeof message.content === 'string') {
+              displayContent = message.content;
+            } else if (message.content && typeof message.content === 'object') {
+              // Try to access common transcript properties
+              if (message.content.text) {
+                displayContent = message.content.text;
+              } else if (message.content.transcript) {
+                displayContent = message.content.transcript;
+              } else if (message.content.content) {
+                displayContent = message.content.content;
+              } else {
+                // Fallback to JSON stringify but avoid [object Object]
+                try {
+                  const jsonStr = JSON.stringify(message.content);
+                  displayContent = jsonStr !== "[object Object]" ? jsonStr : "Unable to display message"; 
+                } catch (e) {
+                  displayContent = String(message.content);
+                }
+              }
+            }
+            
+            // Only render if we have content to display
+            if (!displayContent) return null;
+            
+            return (
               <div 
-                className={`max-w-3/4 rounded-lg p-3 ${
-                  message.role === 'user' 
-                    ? 'bg-blue-600 text-white rounded-br-none' 
-                    : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                }`}
+                key={idx} 
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
+                <div 
+                  className={`max-w-3/4 rounded-lg p-3 ${
+                    message.role === 'user' 
+                      ? 'bg-blue-600 text-white rounded-br-none' 
+                      : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                  }`}
+                >
+                  {displayContent}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {state === "connecting" && (
             <div className="flex justify-start">
               <div className="bg-gray-100 rounded-lg p-3 rounded-bl-none flex items-center gap-2">
