@@ -5,7 +5,7 @@ import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
 import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
 import Image from "next/image";
 import { Mic, MicOff, Loader2, Calendar, Video } from "lucide-react";
-import { CalComService } from "@/lib/calComService";
+import { CalComService } from "../lib/calComService";
 
 // Function to format date string
 const formatDate = (dateString: string) => {
