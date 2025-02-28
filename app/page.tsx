@@ -6,7 +6,7 @@ import { VoiceClientAudio, VoiceClientProvider } from "realtime-ai-react";
 import App from "./App";
 import { defaultConfig } from "./rtvi.config";
 import { LLMHelper } from "realtime-ai";
-import { CalComService } from "@/lib/calComService";
+import { CalComService } from "./lib/calComService";
 
 export default function Home() {
   const [dailyVoiceClient, setDailyVoiceClient] = useState<DailyVoiceClient | null>(null);
