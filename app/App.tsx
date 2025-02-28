@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
-import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
 import { Mic, MicOff, Loader2, Calendar, MapPin } from "lucide-react";
 
 // Function to format date string
@@ -127,16 +125,18 @@ const parseAppointment = (text: string): any | null => {
   return null;
 };
 
+// The main component
 const App: React.FC = () => {
-  const voiceClient = useVoiceClient();
+  // State for audio recording and sending to Daily API
+  const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userTranscript, setUserTranscript] = useState<string[]>([]);
   const [botTranscript, setBotTranscript] = useState<string[]>([]);
-  const [state, setState] = useState<TransportState>("idle");
-  const [isActive, setIsActive] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const [showEmailInput, setShowEmailInput] = useState<boolean>(true);
+  const [botReady, setBotReady] = useState(false);
   
   // Tracking patient data
   const [symptoms, setSymptoms] = useState<Array<{
@@ -158,12 +158,12 @@ const App: React.FC = () => {
   
   const [existingAppointments, setExistingAppointments] = useState<any[]>([]);
   
-  // For preventing function call data from appearing in messages
-  const [processingFunctionCall, setProcessingFunctionCall] = useState(false);
-  const lastFunctionCallRef = useRef<string | null>(null);
-  
   // For tracking context to help parse symptoms and appointments
   const currentContextRef = useRef<string>("initial"); // "initial", "symptoms", "appointment"
+  
+  // WebSocket connection
+  const socketRef = useRef<WebSocket | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   
   // Add direct rendering of transcript arrays for debugging
   const debugMode = false; // Set to true to see raw transcripts
@@ -196,216 +196,312 @@ const App: React.FC = () => {
     e.preventDefault();
     if (userEmail && userName) {
       setShowEmailInput(false);
+      setBotReady(true);
     }
   };
 
-  useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript: any) => {
-    // Extract text content from the transcript
-    console.log("Raw bot transcript received:", transcript);
-    
-    let transcriptText = '';
-    
-    // Handle string transcripts
-    if (typeof transcript === 'string') {
-      transcriptText = transcript;
-    } 
-    // Handle object transcripts
-    else if (transcript && typeof transcript === 'object') {
-      // Try accessing various properties directly
-      const obj = transcript as Record<string, any>;
-      
-      if (typeof obj.text === 'string') {
-        transcriptText = obj.text;
-      } else if (typeof obj.transcript === 'string') {
-        transcriptText = obj.transcript;
-      } else if (typeof obj.content === 'string') {
-        transcriptText = obj.content;
-      } else if (typeof obj.message === 'string') {
-        transcriptText = obj.message;
-      } else if (typeof obj.value === 'string') {
-        transcriptText = obj.value;
-      } else if (typeof obj.botTranscript === 'string') {
-        transcriptText = obj.botTranscript;
-      } else if (typeof obj.data === 'string') {
-        transcriptText = obj.data;
-      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
-        transcriptText = obj.data.text;
-      } else {
-        // Last resort: stringify the object but avoid [object Object]
-        try {
-          const jsonString = JSON.stringify(obj);
-          if (jsonString !== '{}' && jsonString !== '[object Object]') {
-            transcriptText = jsonString;
-          }
-        } catch (e) {
-          console.error("Failed to stringify transcript:", e);
-        }
-      }
-    }
-    
-    // Skip empty transcripts
-    if (!transcriptText || !transcriptText.trim()) {
-      return;
-    }
-    
-    // Infer the current context from the bot's message
-    if (transcriptText.includes("discomfort") || transcriptText.includes("pain") || 
-        transcriptText.includes("severity") || transcriptText.includes("scale")) {
-      currentContextRef.current = "symptoms";
-    } else if (transcriptText.includes("appointment") || transcriptText.includes("consultation") ||
-               transcriptText.includes("online") || transcriptText.includes("in-person")) {
-      currentContextRef.current = "appointment";
-    }
-
-    // Deduplicate identical messages
-    const msgKey = `bot-${transcriptText}`;
-    if (sentMessages.current.has(msgKey)) {
-      return;
-    }
-    
-    // Add the message with a unique ID
-    const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    sentMessages.current.add(msgKey);
-    setBotTranscript(prev => [...prev, transcriptText]);
-    
-    // Use setTimeout to ensure state updates don't conflict
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: transcriptText,
-        id: msgId 
-      }]);
-    }, 10);
-  });
-
-  useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript: any) => {
-    // Extract text content from the transcript
-    console.log("Raw user transcript received:", transcript);
-    
-    let transcriptText = '';
-    
-    // Handle string transcripts
-    if (typeof transcript === 'string') {
-      transcriptText = transcript;
-    } 
-    // Handle object transcripts
-    else if (transcript && typeof transcript === 'object') {
-      // Try accessing various properties directly
-      const obj = transcript as Record<string, any>;
-      
-      if (typeof obj.text === 'string') {
-        transcriptText = obj.text;
-      } else if (typeof obj.transcript === 'string') {
-        transcriptText = obj.transcript;
-      } else if (typeof obj.content === 'string') {
-        transcriptText = obj.content;
-      } else if (typeof obj.message === 'string') {
-        transcriptText = obj.message;
-      } else if (typeof obj.value === 'string') {
-        transcriptText = obj.value;
-      } else if (typeof obj.userTranscript === 'string') {
-        transcriptText = obj.userTranscript;
-      } else if (typeof obj.data === 'string') {
-        transcriptText = obj.data;
-      } else if (obj.data && typeof obj.data === 'object' && typeof obj.data.text === 'string') {
-        transcriptText = obj.data.text;
-      } else {
-        // Last resort: stringify the object but avoid [object Object]
-        try {
-          const jsonString = JSON.stringify(obj);
-          if (jsonString !== '{}' && jsonString !== '[object Object]') {
-            transcriptText = jsonString;
-          }
-        } catch (e) {
-          console.error("Failed to stringify transcript:", e);
-        }
-      }
-    }
-    
-    console.log("Extracted user transcript:", transcriptText);
-    
-    // Skip empty transcripts
-    if (!transcriptText || !transcriptText.trim()) {
-      return;
-    }
-    
-    // Parse user's message for symptoms or appointments based on context
-    if (currentContextRef.current === "symptoms") {
-      const detectedSymptoms = parseSymptoms(transcriptText);
-      if (detectedSymptoms.length > 0) {
-        console.log("Detected symptoms:", detectedSymptoms);
-        setSymptoms(prev => {
-          // Merge with existing symptoms
-          const existing = [...prev];
-          detectedSymptoms.forEach(symptom => {
-            const existingIndex = existing.findIndex(s => s.location === symptom.location);
-            if (existingIndex >= 0) {
-              existing[existingIndex] = { ...existing[existingIndex], ...symptom };
-            } else {
-              existing.push(symptom);
-            }
-          });
-          return existing;
-        });
-      }
-    } else if (currentContextRef.current === "appointment") {
-      const detectedAppointment = parseAppointment(transcriptText);
-      if (detectedAppointment) {
-        console.log("Detected appointment:", detectedAppointment);
-        setAppointment(detectedAppointment);
-      }
-    }
-    
-    // Deduplicate identical messages
-    const msgKey = `user-${transcriptText}`;
-    if (sentMessages.current.has(msgKey)) {
-      return;
-    }
-    
-    // Add the message with a unique ID
-    const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    sentMessages.current.add(msgKey);
-    setUserTranscript(prev => [...prev, transcriptText]);
-    
-    // Use setTimeout to ensure state updates don't conflict
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: "user", 
-        content: transcriptText,
-        id: msgId 
-      }]);
-    }, 10);
-  });
-
-  useVoiceClientEvent(
-    VoiceEvent.TransportStateChanged,
-    (state: TransportState) => {
-      setState(state);
-      if (state === "connected") {
-        setIsActive(true);
-      } else if (state === "idle") {
-        setIsActive(false);
-        // Clear the sent messages cache when ending a session
-        sentMessages.current.clear();
-      }
-    }
-  );
-
-  async function start() {
-    if (!voiceClient || !userEmail || !userName) return;
+  // Function to start the voice conversation
+  const startVoiceConversation = async () => {
     try {
-      await voiceClient.start();
-    } catch (e) {
-      setError((e as VoiceError).message || "Unknown error occurred");
-      voiceClient.disconnect();
-    }
-  }
+      setIsConnecting(true);
+      
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Configure gemini service
+      const services = {
+        stt: "deepgram",
+        tts: "cartesia",
+        llm: "gemini"
+      };
+      
+      // Configuration based on your playground example
+      const config = [
+        {
+          service: "vad",
+          options: [
+            {
+              name: "params",
+              value: {
+                stop_secs: 0.6
+              }
+            }
+          ]
+        },
+        {
+          service: "tts",
+          options: [
+            {
+              name: "voice",
+              value: "79a125e8-cd45-4c13-8a67-188112f4dd22"
+            },
+            {
+              name: "language",
+              value: "en"
+            },
+            {
+              name: "text_filter",
+              value: {
+                filter_code: false,
+                filter_tables: false
+              }
+            },
+            {
+              name: "model",
+              value: "sonic-english"
+            },
+            {
+              name: "emotion",
+              value: [
+                "positivity:low"
+              ]
+            }
+          ]
+        },
+        {
+          service: "llm",
+          options: [
+            {
+              name: "model",
+              value: "models/gemini-2.0-flash-exp"
+            },
+            {
+              name: "initial_messages",
+              value: [
+                {
+                  role: "system",
+                  content: `# Role: You are Dr. Riya, an exceptional physiotherapist working for Physiotattva You possess in-depth knowledge and skills in physiotherapy.
+# Rule: Strictly only ask one question at a time
 
-  async function disconnect() {
-    if (!voiceClient) return;
-    await voiceClient.disconnect();
-    // Keep the messages to maintain conversation history
-  }
+Stage 1: Initial Greeting & Routing (Dr. Riya)
+System Prompt:
+"Hi, this is Dr. Riya from Physiotattva. How can I assist you today?"
+
+Routing Logic:
+
+If user mentions booking an appointment, move to Stage 3 (Appointment Booking).
+If user describes symptoms, move to Stage 2 (Symptom Checker).
+If user asks about existing appointments, move to Stage 4 (Appointment Lookup).
+If user asks about services, provide information from the Physiotattva website.
+
+Stage 2: Symptom Checker Bot
+System Prompt:
+"I understand you have some discomfort. Can you describe where you feel the pain?"
+
+Follow-up Questions (if needed): (Strictly only ask one question at a time)
+
+"How long have you had this pain?"
+"On a scale of 1 to 10, how severe is it?"
+"Is the pain constant or does it come and go?"
+"Does it worsen with movement?"
+
+Decision:
+
+If symptoms match a physiotherapy condition, recommend a consultation and move to Stage 3 (Appointment Booking).
+
+Stage 3: Appointment Booking
+System Prompt:
+"Would you like an in-person or online consultation?"
+
+Case 1: In-Person Appointment
+
+"We have centers in Bangalore and Hyderabad. Which city do you prefer?"
+"Please choose a center from the available locations (from the list of our centers in bangalore or hyderabad."
+"What day of this or next week would you like? (Available Mon to Sat)"
+"Here are the available time slots. Which one works for you? (Available 8AM to 8PM) "
+"The consultation fee is 499 $. Proceeding with booking?"
+"Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?"
+
+Case 2: Online Appointment
+
+"What date would you like?"
+"What day of this or next week would you like? (Available Mon to Sat)"
+"Here are the available time slots. Which one works for you? (Available 8AM to 8PM) "
+"The consultation fee is 99 $. Proceeding with booking?"
+
+"Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?"
+
+Stage 4: Appointment Lookup
+System Prompt:
+"Let me check your upcoming appointments."
+
+API Fetch & Response:
+
+"You have an appointment on [Date] at [Time] for a [Online/In-Person] consultation."`
+                }
+              ]
+            },
+            {
+              name: "run_on_config",
+              value: true
+            }
+          ]
+        }
+      ];
+      
+      // Call our API route to start the Daily bot
+      const response = await fetch('/api', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ services, config })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to start bot');
+      }
+      
+      const botData = await response.json();
+      
+      // Connect to the WebSocket
+      if (botData.ws_url) {
+        // Create WebSocket connection
+        socketRef.current = new WebSocket(botData.ws_url);
+        
+        // Setup event handlers
+        socketRef.current.onopen = () => {
+          setIsRecording(true);
+          setIsConnecting(false);
+          
+          // Setup MediaRecorder for streaming audio
+          const mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm'
+          });
+          
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
+              socketRef.current.send(event.data);
+            }
+          };
+          
+          mediaRecorder.start(100); // Send data every 100ms
+          mediaRecorderRef.current = mediaRecorder;
+        };
+        
+        socketRef.current.onmessage = (event) => {
+          // Handle incoming messages from the bot
+          try {
+            const data = JSON.parse(event.data);
+            
+            // Handle transcript data
+            if (data.type === 'transcript' && data.role === 'bot') {
+              const transcriptText = data.text || '';
+              
+              // Skip empty transcripts
+              if (!transcriptText.trim()) return;
+              
+              // Infer the current context from the bot's message
+              if (transcriptText.includes("discomfort") || transcriptText.includes("pain") || 
+                  transcriptText.includes("severity") || transcriptText.includes("scale")) {
+                currentContextRef.current = "symptoms";
+              } else if (transcriptText.includes("appointment") || transcriptText.includes("consultation") ||
+                         transcriptText.includes("online") || transcriptText.includes("in-person")) {
+                currentContextRef.current = "appointment";
+              }
+              
+              // Deduplicate identical messages
+              const msgKey = `bot-${transcriptText}`;
+              if (!sentMessages.current.has(msgKey)) {
+                sentMessages.current.add(msgKey);
+                const msgId = `bot-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+                
+                setBotTranscript(prev => [...prev, transcriptText]);
+                setMessages(prev => [...prev, { 
+                  role: "assistant", 
+                  content: transcriptText,
+                  id: msgId 
+                }]);
+              }
+            }
+            else if (data.type === 'transcript' && data.role === 'user') {
+              const transcriptText = data.text || '';
+              
+              // Skip empty transcripts
+              if (!transcriptText.trim()) return;
+              
+              // Parse user's message for symptoms or appointments based on context
+              if (currentContextRef.current === "symptoms") {
+                const detectedSymptoms = parseSymptoms(transcriptText);
+                if (detectedSymptoms.length > 0) {
+                  console.log("Detected symptoms:", detectedSymptoms);
+                  setSymptoms(prev => {
+                    // Merge with existing symptoms
+                    const existing = [...prev];
+                    detectedSymptoms.forEach(symptom => {
+                      const existingIndex = existing.findIndex(s => s.location === symptom.location);
+                      if (existingIndex >= 0) {
+                        existing[existingIndex] = { ...existing[existingIndex], ...symptom };
+                      } else {
+                        existing.push(symptom);
+                      }
+                    });
+                    return existing;
+                  });
+                }
+              } else if (currentContextRef.current === "appointment") {
+                const detectedAppointment = parseAppointment(transcriptText);
+                if (detectedAppointment) {
+                  console.log("Detected appointment:", detectedAppointment);
+                  setAppointment(detectedAppointment);
+                }
+              }
+              
+              // Deduplicate identical messages
+              const msgKey = `user-${transcriptText}`;
+              if (!sentMessages.current.has(msgKey)) {
+                sentMessages.current.add(msgKey);
+                const msgId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+                
+                setUserTranscript(prev => [...prev, transcriptText]);
+                setMessages(prev => [...prev, { 
+                  role: "user", 
+                  content: transcriptText,
+                  id: msgId 
+                }]);
+              }
+            }
+          } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+          }
+        };
+        
+        socketRef.current.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setError('Connection error occurred');
+          setIsRecording(false);
+          setIsConnecting(false);
+        };
+        
+        socketRef.current.onclose = () => {
+          setIsRecording(false);
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+          }
+          stream.getTracks().forEach(track => track.stop());
+        };
+      }
+    } catch (error) {
+      console.error('Error starting voice conversation:', error);
+      setError('Failed to start voice conversation');
+      setIsConnecting(false);
+    }
+  };
+
+  const stopVoiceConversation = () => {
+    // Stop recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    
+    // Close WebSocket
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+    
+    setIsRecording(false);
+  };
 
   // Email collection form
   if (showEmailInput) {
@@ -511,7 +607,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               ))}
-              {state === "connecting" && (
+              {isConnecting && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 rounded-lg p-3 rounded-bl-none flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
@@ -546,34 +642,34 @@ const App: React.FC = () => {
           {/* Control Panel */}
           <div className="w-full bg-white border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-4">
             <div className="text-center text-sm text-gray-500 mb-2">
-              {state === "idle" 
+              {!isRecording && !isConnecting
                 ? "Click the button below to start talking with Dr. Riya"
-                : state === "connecting" 
+                : isConnecting
                   ? "Connecting to Dr. Riya..."
-                  : state === "connected" 
+                  : isRecording 
                     ? "Dr. Riya is listening..."
-                : "Processing your request..."}
+                    : "Processing your request..."}
             </div>
             
             <button
-              onClick={() => (state === "idle" ? start() : disconnect())}
+              onClick={() => (isRecording ? stopVoiceConversation() : startVoiceConversation())}
               className={`relative inline-flex items-center justify-center rounded-full w-16 h-16 transition-all duration-300 ${
-                isActive 
+                isRecording 
                   ? "bg-red-500 hover:bg-red-600" 
                   : "bg-blue-600 hover:bg-blue-700"
               } shadow-lg hover:shadow-xl`}
-              disabled={state === "connecting"}
+              disabled={isConnecting}
             >
-              {state === "connecting" ? (
+              {isConnecting ? (
                 <Loader2 className="h-6 w-6 animate-spin text-white" />
-              ) : isActive ? (
+              ) : isRecording ? (
                 <MicOff className="h-6 w-6 text-white" />
               ) : (
                 <Mic className="h-6 w-6 text-white" />
               )}
               
               <span className="absolute -bottom-8 text-sm font-medium text-gray-700">
-                {isActive ? "End Call" : "Start Call"}
+                {isRecording ? "End Call" : "Start Call"}
               </span>
             </button>
             
@@ -592,6 +688,7 @@ const App: React.FC = () => {
               Consultation Details
             </h2>
             
+            {/* User info */}
             {/* User info */}
             <div className="mb-6">
               <h3 className="text-sm font-medium text-gray-500 mb-2">Patient Information</h3>
