@@ -1,139 +1,65 @@
-// app/rtvi.config.ts
-
-const bookAppointmentTool = {
-  name: "book_appointment",
-  description: "Book a mental health consultation appointment with Dr. Riya",
-  parameters: {
-    type: "object",
-    properties: {
-      date: {
-        type: "string",
-        description: "Appointment date in YYYY-MM-DD format (Monday to Saturday only, no Sundays)",
-      },
-      time: {
-        type: "string",
-        description: "Appointment time in HH:MM format (between 9 AM to 7 PM)",
-      },
-      email: {
-        type: "string",
-        description: "Email address for calendar invite",
-      },
-      name: {
-        type: "string",
-        description: "Patient name",
-      },
-      concerns: {
-        type: "string",
-        description: "Brief description of patient's mental health concerns",
-      }
-    },
-    required: ["date", "time", "email", "name"],
-  },
-};
-
-const recordSymptomsTool = {
-  name: "record_symptoms",
-  description: "Record patient's reported mental health symptoms",
-  parameters: {
-    type: "object",
-    properties: {
-      symptoms: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            symptom: {
-              type: "string",
-              description: "Name of the reported symptom",
-            },
-            severity: {
-              type: "string",
-              description: "Severity level of the symptom (mild, moderate, severe)",
-            },
-            duration: {
-              type: "string",
-              description: "Duration of the symptom (e.g., 2 weeks, 3 months)",
-            }
-          },
-          required: ["symptom", "severity", "duration"]
+export const defaultConfig = [
+  {
+    service: "vad",
+    options: [
+      {
+        name: "params",
+        value: {
+          stop_secs: 0.6
         }
       }
-    },
-    required: ["symptoms"],
+    ]
   },
-};
-
-export const defaultConfig = [
+  {
+    service: "tts",
+    options: [
+      {
+        name: "voice",
+        value: "79a125e8-cd45-4c13-8a67-188112f4dd22"
+      },
+      {
+        name: "language",
+        value: "en"
+      },
+      {
+        name: "text_filter",
+        value: {
+          filter_code: false,
+          filter_tables: false
+        }
+      },
+      {
+        name: "model",
+        value: "sonic-english"
+      },
+      {
+        name: "emotion",
+        value: [
+          "positivity:low"
+        ]
+      }
+    ]
+  },
   {
     service: "llm",
     options: [
+      {
+        name: "model",
+        value: "models/gemini-2.0-flash-exp"
+      },
       {
         name: "initial_messages",
         value: [
           {
             role: "system",
-            content: `
-            Role: 
-            You are Dr. Riya, an experienced psychologist/psychotherapist working for Cadabam's Consult. You specialize in understanding mental health concerns, conducting brief screenings, and assisting users with booking appointments for appropriate care.
-            
-            Objective: 
-            Engage in a quick and focused discussion with the user to understand their concerns and book appropriate consultation.
-            
-            Process:
-            1. Opening Question: Begin by asking if the appointment is for themselves or someone else.
-            
-            2. Discussion of Concerns:
-               - Briefly inquire about mental health concerns 
-               - Ask direct questions about concerns
-               - One short question at a time
-               - Record symptoms using record_symptoms function
-               - Never mention recording or note-taking
-               - Keep responses brief and focused
-            
-            3. Appointment Booking:
-               - Working Days: Monday to Saturday (no Sundays)
-               - Working Hours: 9 AM to 7 PM
-               - Collect details step-by-step:
-                 * Appointment Date (Working Days: Mon to Sat)
-                 * Appointment Time (Working Hours: 9 AM to 7 PM)
-                 * Email address for calendar invite
-                 * Patient name
-               - Use book_appointment function to schedule the appointment
-            
-            Rules:
-            - Keep all responses under 2 sentences
-            - No comments or observations
-            - No repeated information
-            - Focus on questions and booking
-            - Never mention recording or notes
-            - Wait for user response
-            - Ask one question at a time
-            - Always calculate and use exact dates
-            - Record all symptoms using the record_symptoms function
-            - Consistency: Guide the conversation smoothly and stay on topic
-            - Boundaries: Avoid providing in-depth therapy during the call; focus on understanding concerns and booking the appointment. Redirect if the conversation strays.
-            - Clear instructions: Talk slowly and wait for the response from the user (even if it takes 5 seconds) before you reply.
-            
-            You have access to the following functions:
-            
-            1. ${bookAppointmentTool.name}: ${bookAppointmentTool.description}
-            2. ${recordSymptomsTool.name}: ${recordSymptomsTool.description}
-            
-            When you need to call a function, respond in the following format with no prefix or suffix:
-            <function=function_name>{"param1": "value1", "param2": "value2", ...}</function>
-            
-            Important:
-            - Use functions silently without mentioning them to the user
-            - After booking an appointment, let the user know their appointment is confirmed and they will receive a calendar invitation with video consultation link
-            - Keep your responses brief and focused on moving the conversation forward
-            `,
-          },
-        ],
+            content: "# Role: You are Dr. Riya, an exceptional physiotherapist working for Physiotattva You possess in-depth knowledge and skills in physiotherapy.\n# Rule: Strictly only ask one question at a time\n\nStage 1: Initial Greeting & Routing (Dr. Riya)\nSystem Prompt:\n\"Hi, this is Dr. Riya from Physiotattva. How can I assist you today?\"\n\nRouting Logic:\n\nIf user mentions booking an appointment, move to Stage 3 (Appointment Booking).\nIf user describes symptoms, move to Stage 2 (Symptom Checker).\nIf user asks about existing appointments, move to Stage 4 (Appointment Lookup).\nIf user asks about services, provide information from the Physiotattva website.\n\nStage 2: Symptom Checker Bot\nSystem Prompt:\n\"I understand you have some discomfort. Can you describe where you feel the pain?\"\n\nFollow-up Questions (if needed): (Strictly only ask one question at a time)\n\n\"How long have you had this pain?\"\n\"On a scale of 1 to 10, how severe is it?\"\n\"Is the pain constant or does it come and go?\"\n\"Does it worsen with movement?\"\n\nDecision:\n\nIf symptoms match a physiotherapy condition, recommend a consultation and move to Stage 3 (Appointment Booking).\n\nStage 3: Appointment Booking\nSystem Prompt:\n\"Would you like an in-person or online consultation?\"\n\nCase 1: In-Person Appointment\n\n\"We have centers in Bangalore and Hyderabad. Which city do you prefer?\"\n\"Please choose a center from the available locations (from the list of our centers in bangalore or hyderabad.\"\n\"What day of this or next week would you like? (Available Mon to Sat)\"\n\"Here are the available time slots. Which one works for you? (Available 8AM to 8PM) \"\n\"The consultation fee is 499 $. Proceeding with booking?\"\n\"Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?\"\n\nCase 2: Online Appointment\n\n\"What date would you like?\"\n\"What day of this or next week would you like? (Available Mon to Sat)\"\n\"Here are the available time slots. Which one works for you? (Available 8AM to 8PM) \"\n\"The consultation fee is 99 $. Proceeding with booking?\"\n\n\"Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?\"\n\nStage 4: Appointment Lookup\nSystem Prompt:\n\"Let me check your upcoming appointments.\"\n\nAPI Fetch & Response:\n\n\"You have an appointment on [Date] at [Time] for a [Online/In-Person] consultation.\""
+          }
+        ]
       },
-      { name: "temperature", value: 0.3 },
-      { name: "run_on_config", value: true },
-    ],
-  },
+      {
+        name: "run_on_config",
+        value: true
+      }
+    ]
+  }
 ];
-
-export { bookAppointmentTool, recordSymptomsTool };
