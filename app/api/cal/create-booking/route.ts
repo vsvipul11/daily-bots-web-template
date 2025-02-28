@@ -68,10 +68,10 @@ export async function POST(request: Request) {
     
     console.log("Cal.com booking created successfully:", booking);
     return NextResponse.json(booking);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error in Cal.com booking API route:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to create booking" },
+      { error: error instanceof Error ? error.message : "Failed to create booking" },
       { status: 500 }
     );
   }
