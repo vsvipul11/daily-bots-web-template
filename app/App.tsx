@@ -1,4 +1,33 @@
-"use client";
+// Auto-scroll to bottom when messages change
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+  
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);  // Listen for final user transcript to avoid duplicates from real-time transcription
+  useVoiceClientEvent(VoiceEvent.FinalUserTranscript, (finalTranscript) => {
+    // This helps ensure we get the final, correct version of user input
+    console.log("Final user transcript received:", finalTranscript);
+  });
+  
+  // Listen for socket connection status changes
+  useEffect(() => {
+    const checkConnection = () => {
+      if (voiceClient) {
+        const socketState = voiceClient.getSocketState?.();
+        console.log("Socket connection state:", socketState);
+      }
+    };
+    
+    // Check initially and periodically
+    checkConnection();
+    const interval = setInterval(checkConnection, 5000);
+    
+    return () => clearInterval(interval);
+  }, [voiceClient]);"use client";
 
 import React, { useState, useEffect } from "react";
 import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
@@ -15,12 +44,18 @@ const App: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
 
   // Track conversation messages
-  const [messages, setMessages] = useState<Array<{role: string, content: any}>>([
+  const [messages, setMessages] = useState<Array<{role: string, content: any, id: string}>>([
     {
       role: "assistant",
-      content: "Hello, I'm Dr. Riya from Cadabam's Consult. How can I help you today?"
+      content: "Hello, I'm Dr. Riya from Cadabam's Consult. How can I help you today?",
+      id: "initial-message"
     }
   ]);
+  
+  // Keep track of processed transcripts to avoid duplication
+  const [processedTranscripts] = useState<Set<string>>(new Set());
+  const [lastUserMessageTime, setLastUserMessageTime] = useState<number>(0);
+  const [lastBotMessageTime, setLastBotMessageTime] = useState<number>(0);
 
   useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript) => {
     // Extract text from transcript object
@@ -50,9 +85,31 @@ const App: React.FC = () => {
     
     console.log("Bot transcript received:", transcriptText);
     
+    // Only process non-empty, meaningful content
     if (transcriptText && transcriptText.trim()) {
-      setBotTranscript((prev) => [...prev, transcriptText]);
-      setMessages(prev => [...prev, { role: "assistant", content: transcriptText }]);
+      // Create a unique hash of the content to check for duplicates
+      const contentHash = `bot-${transcriptText.trim()}`;
+      
+      // Deduplicate and throttle: don't add identical messages within 1 second
+      const now = Date.now();
+      if (
+        !processedTranscripts.has(contentHash) && 
+        now - lastBotMessageTime > 1000
+      ) {
+        processedTranscripts.add(contentHash);
+        setLastBotMessageTime(now);
+        
+        const messageId = `bot-${now}-${Math.random().toString(36).substring(2, 9)}`;
+        setBotTranscript((prev) => [...prev, transcriptText]);
+        setMessages(prev => {
+          // Check if we're getting the same content as the previous message
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg && lastMsg.role === "assistant" && lastMsg.content === transcriptText) {
+            return prev; // Skip duplicate
+          }
+          return [...prev, { role: "assistant", content: transcriptText, id: messageId }];
+        });
+      }
     }
   });
 
@@ -84,9 +141,31 @@ const App: React.FC = () => {
     
     console.log("User transcript received:", transcriptText);
     
+    // Only process non-empty, meaningful content
     if (transcriptText && transcriptText.trim()) {
-      setUserTranscript((prev) => [...prev, transcriptText]);
-      setMessages(prev => [...prev, { role: "user", content: transcriptText }]);
+      // Create a unique hash of the content to check for duplicates
+      const contentHash = `user-${transcriptText.trim()}`;
+      
+      // Deduplicate and throttle: don't add identical messages within 1 second
+      const now = Date.now();
+      if (
+        !processedTranscripts.has(contentHash) && 
+        now - lastUserMessageTime > 1000
+      ) {
+        processedTranscripts.add(contentHash);
+        setLastUserMessageTime(now);
+        
+        const messageId = `user-${now}-${Math.random().toString(36).substring(2, 9)}`;
+        setUserTranscript((prev) => [...prev, transcriptText]);
+        setMessages(prev => {
+          // Check if we're getting the same content as the previous message
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg && lastMsg.role === "user" && lastMsg.content === transcriptText) {
+            return prev; // Skip duplicate
+          }
+          return [...prev, { role: "user", content: transcriptText, id: messageId }];
+        });
+      }
     }
   });
 
@@ -149,7 +228,7 @@ const App: React.FC = () => {
       {/* Conversation area */}
       <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
         <div className="flex flex-col gap-4">
-          {messages.map((message, idx) => {
+          {messages.map((message) => {
             // Determine the content to display
             let displayContent = '';
             if (typeof message.content === 'string') {
@@ -180,8 +259,8 @@ const App: React.FC = () => {
             
             return (
               <div 
-                key={idx} 
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                key={message.id} 
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} mb-3`}
               >
                 <div 
                   className={`max-w-3/4 rounded-lg p-3 ${
