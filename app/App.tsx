@@ -15,7 +15,7 @@ const App: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
 
   // Track conversation messages
-  const [messages, setMessages] = useState<Array<{role: string, content: string}>>([
+  const [messages, setMessages] = useState<Array<{role: string, content: any}>>([
     {
       role: "assistant",
       content: "Hello, I'm Dr. Riya from Cadabam's Consult. How can I help you today?"
@@ -23,7 +23,14 @@ const App: React.FC = () => {
   ]);
 
   useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript) => {
-    const transcriptText = String(transcript);
+    // Handle transcript as string or object
+    let transcriptText = '';
+    if (typeof transcript === 'string') {
+      transcriptText = transcript;
+    } else if (transcript && typeof transcript === 'object') {
+      transcriptText = String(transcript);
+    }
+    
     if (transcriptText && transcriptText.trim()) {
       setBotTranscript((prev) => [...prev, transcriptText]);
       setMessages(prev => [...prev, { role: "assistant", content: transcriptText }]);
@@ -31,7 +38,14 @@ const App: React.FC = () => {
   });
 
   useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript) => {
-    const transcriptText = String(transcript);
+    // Handle transcript as string or object
+    let transcriptText = '';
+    if (typeof transcript === 'string') {
+      transcriptText = transcript;
+    } else if (transcript && typeof transcript === 'object') {
+      transcriptText = String(transcript);
+    }
+    
     if (transcriptText && transcriptText.trim()) {
       setUserTranscript((prev) => [...prev, transcriptText]);
       setMessages(prev => [...prev, { role: "user", content: transcriptText }]);
@@ -72,11 +86,12 @@ const App: React.FC = () => {
       <div className="w-full bg-white shadow-md rounded-lg p-4 mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Image 
-            src="https://cdn.prod.website-files.com/6067e9cc04d7b901547a284e/669b63600521ea1779b61d34_62a2dea737ece30511d5f9a8_Logo%2520for%2520headder%2520(1).webp" 
+            src="https://cdn.prod.website-files.com/6067e9cc04d7b901547a284e/669b63600521ea1779b61d34_62a2dea737ece30511d5f9a8_Logo%20for%20headder%20(1).webp" 
             alt="Cadabam's Hospital Logo"
             width={150}
             height={50}
             className="h-10 w-auto"
+            priority
           />
           <div className="h-6 w-px bg-gray-300 mx-2"></div>
           <h1 className="text-xl font-bold text-blue-800">Dr. Riya</h1>
@@ -108,7 +123,7 @@ const App: React.FC = () => {
                     : 'bg-gray-100 text-gray-800 rounded-bl-none'
                 }`}
               >
-                {message.content}
+                {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
               </div>
             </div>
           ))}
