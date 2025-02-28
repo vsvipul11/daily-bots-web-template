@@ -4,14 +4,12 @@ import { useEffect, useState } from "react";
 import { DailyVoiceClient } from "realtime-ai-daily";
 import { VoiceClientAudio, VoiceClientProvider } from "realtime-ai-react";
 import App from "./App";
-import Image from "next/image";
 import { defaultConfig } from "./rtvi.config";
 import { LLMHelper } from "realtime-ai";
-import CalendlyService from "@/lib/calendlyService";
+import { CalComService } from "@/lib/calComService";
 
 export default function Home() {
   const [dailyVoiceClient, setDailyVoiceClient] = useState<DailyVoiceClient | null>(null);
-  const userEmail = "user@example.com"; // This is now handled by the App component's form
 
   useEffect(() => {
     if (dailyVoiceClient) {
@@ -52,22 +50,24 @@ export default function Home() {
         })
       ) as LLMHelper;
 
-      // Handle book_appointment function calls
+      // Handle function calls
       llmHelper.handleFunctionCall(async (fn: any) => {
         console.log("Function call received:", fn);
         
+        const args = typeof fn.arguments === 'string' 
+          ? JSON.parse(fn.arguments) 
+          : fn.arguments;
+        
         // Handling book_appointment function
-        if (fn.functionName === "book_appointment" && fn.arguments) {
-          const args = typeof fn.arguments === 'string' 
-            ? JSON.parse(fn.arguments) 
-            : fn.arguments;
-            
+        if (fn.functionName === "book_appointment" && args) {
           const { date, time, email, name, concerns } = args;
           
           try {
-            // Create appointment with Calendly
-            const calendlyService = CalendlyService.getInstance();
-            const result = await calendlyService.createAppointment(
+            // Get Cal.com service instance
+            const calComService = CalComService.getInstance();
+            
+            // Book appointment using Cal.com
+            const booking = await calComService.createEvent(
               date,
               time,
               email,
@@ -75,13 +75,25 @@ export default function Home() {
               concerns || ""
             );
             
+            // Extract meeting URL from booking response
+            let meetingUrl = null;
+            if (booking.references) {
+              const meetingRef = booking.references.find(
+                (ref: any) => ref.type === "google_meet_video"
+              );
+              if (meetingRef && meetingRef.meetingUrl) {
+                meetingUrl = meetingRef.meetingUrl;
+              }
+            }
+            
             return { 
               success: true, 
               appointment: {
                 date,
                 time,
                 email,
-                meetingUrl: result.meetingUrl || "Video link will be sent via email"
+                name,
+                meetingUrl: meetingUrl || "Video link will be sent via email"
               }
             };
           } catch (error) {
@@ -94,11 +106,7 @@ export default function Home() {
         }
         
         // Handling record_symptoms function
-        else if (fn.functionName === "record_symptoms" && fn.arguments) {
-          const args = typeof fn.arguments === 'string' 
-            ? JSON.parse(fn.arguments) 
-            : fn.arguments;
-            
+        else if (fn.functionName === "record_symptoms" && args) {
           // Simply pass through the symptoms data
           return { success: true, symptoms: args.symptoms };
         }
