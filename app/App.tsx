@@ -40,18 +40,14 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Add listeners for all relevant transcript events
+  // Add basic initialization logging
   useEffect(() => {
-    // Additional logging for debug purposes
     if (voiceClient) {
       console.log("VoiceClient initialized successfully");
-      
-      // Register listeners using the proper event types
-      // Note: Removed custom 'log' event since it's not in the supported event list
     }
   }, [voiceClient]);
 
-  useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript) => {
+  useVoiceClientEvent(VoiceEvent.BotTranscript, (transcript: any) => {
     // Extract text content from the transcript
     console.log("Raw bot transcript received:", transcript);
     
@@ -60,25 +56,28 @@ const App: React.FC = () => {
     // Handle string transcripts
     if (typeof transcript === 'string') {
       transcriptText = transcript;
-    } 
-    // Handle potential parsed JSON string
-    else if (typeof transcript === 'string' && transcript.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(transcript);
-        if (parsed.text) transcriptText = parsed.text;
-        else if (parsed.transcript) transcriptText = parsed.transcript;
-        else if (parsed.content) transcriptText = parsed.content;
-        else if (parsed.message) transcriptText = parsed.message;
-        else transcriptText = transcript;
-      } catch {
-        transcriptText = transcript;
+      
+      // Try to parse JSON strings
+      if (transcript.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(transcript);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.text) transcriptText = parsed.text;
+            else if (parsed.transcript) transcriptText = parsed.transcript;
+            else if (parsed.content) transcriptText = parsed.content;
+            else if (parsed.message) transcriptText = parsed.message;
+          }
+        } catch (e) {
+          // If parsing fails, keep original string
+          console.log("JSON parse failed, using original string");
+        }
       }
-    }
+    } 
     // Handle object transcripts
     else if (transcript && typeof transcript === 'object') {
-      const obj = transcript as any;
-      
       // Try accessing various properties directly
+      const obj = transcript as Record<string, any>;
+      
       if (typeof obj.text === 'string') {
         transcriptText = obj.text;
       } else if (typeof obj.transcript === 'string') {
@@ -136,7 +135,7 @@ const App: React.FC = () => {
     }, 10);
   });
 
-  useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript) => {
+  useVoiceClientEvent(VoiceEvent.UserTranscript, (transcript: any) => {
     // Extract text content from the transcript
     console.log("Raw user transcript received:", transcript);
     
@@ -145,25 +144,28 @@ const App: React.FC = () => {
     // Handle string transcripts
     if (typeof transcript === 'string') {
       transcriptText = transcript;
-    } 
-    // Handle potential parsed JSON string
-    else if (typeof transcript === 'string' && transcript.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(transcript);
-        if (parsed.text) transcriptText = parsed.text;
-        else if (parsed.transcript) transcriptText = parsed.transcript;
-        else if (parsed.content) transcriptText = parsed.content;
-        else if (parsed.message) transcriptText = parsed.message;
-        else transcriptText = transcript;
-      } catch {
-        transcriptText = transcript;
+      
+      // Try to parse JSON strings
+      if (transcript.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(transcript);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.text) transcriptText = parsed.text;
+            else if (parsed.transcript) transcriptText = parsed.transcript;
+            else if (parsed.content) transcriptText = parsed.content;
+            else if (parsed.message) transcriptText = parsed.message;
+          }
+        } catch (e) {
+          // If parsing fails, keep original string
+          console.log("JSON parse failed, using original string");
+        }
       }
-    }
+    } 
     // Handle object transcripts
     else if (transcript && typeof transcript === 'object') {
-      const obj = transcript as any;
-      
       // Try accessing various properties directly
+      const obj = transcript as Record<string, any>;
+      
       if (typeof obj.text === 'string') {
         transcriptText = obj.text;
       } else if (typeof obj.transcript === 'string') {
