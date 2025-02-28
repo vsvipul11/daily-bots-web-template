@@ -4,8 +4,38 @@ import React, { useState, useEffect, useRef } from "react";
 import { TransportState, VoiceError, VoiceEvent } from "realtime-ai";
 import { useVoiceClient, useVoiceClientEvent } from "realtime-ai-react";
 import Image from "next/image";
-import { Mic, MicOff, Loader2, Calendar } from "lucide-react";
-import CalendlyService from "@/lib/calendlyService";
+import { Mic, MicOff, Loader2, Calendar, Video } from "lucide-react";
+import { CalComService } from "@/lib/calComService";
+
+// Function to format date string
+const formatDate = (dateString: string) => {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  } catch (e) {
+    return dateString;
+  }
+};
+
+// Function to format time string
+const formatTime = (timeString: string) => {
+  try {
+    if (timeString.includes(':')) {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+    }
+    return timeString;
+  } catch (e) {
+    return timeString;
+  }
+};
 
 const App: React.FC = () => {
   const voiceClient = useVoiceClient();
@@ -93,9 +123,9 @@ const App: React.FC = () => {
         });
         
         try {
-          // Create appointment with Calendly
-          const calendlyService = CalendlyService.getInstance();
-          const result = await calendlyService.createAppointment(
+          // Create appointment with Cal.com
+          const calComService = CalComService.getInstance();
+          const result = await calComService.createEvent(
             date,
             time,
             email || userEmail,
@@ -110,8 +140,14 @@ const App: React.FC = () => {
             confirmed: true
           });
           
-          if (result.meetingUrl) {
-            setMeetingUrl(result.meetingUrl);
+          // Extract meeting URL from booking response
+          if (result.references) {
+            const meetingRef = result.references.find(
+              (ref: any) => ref.type === "google_meet_video"
+            );
+            if (meetingRef && meetingRef.meetingUrl) {
+              setMeetingUrl(meetingRef.meetingUrl);
+            }
           }
           
           return { 
@@ -120,7 +156,7 @@ const App: React.FC = () => {
               date, 
               time, 
               email: email || userEmail,
-              meetingUrl: result.meetingUrl || "Video link will be sent via email"
+              meetingUrl: meetingUrl || "Video link will be sent via email"
             } 
           };
         } catch (error) {
@@ -452,7 +488,7 @@ const App: React.FC = () => {
           <div className="h-6 w-px bg-gray-300 mx-2"></div>
           <h1 className="text-xl font-bold text-blue-800">Dr. Riya</h1>
         </div>
-        <div className="bg-blue-100 px-3 py-1 rounded-full text-sm text-blue-800 font-medium">
+<div className="bg-blue-100 px-3 py-1 rounded-full text-sm text-blue-800 font-medium">
           AI Mental Health Assistant
         </div>
       </div>
@@ -467,7 +503,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-         {/* Conversation area */}
+          {/* Conversation area */}
           <div className="w-full bg-white border border-gray-200 rounded-lg shadow-sm mb-6 h-96 overflow-y-auto p-4">
             <div className="flex flex-col gap-3">
               {messages.map((message) => (
@@ -602,16 +638,11 @@ const App: React.FC = () => {
                   <div className="flex items-center gap-2 mb-3">
                     <Calendar className="h-5 w-5 text-blue-600" />
                     <span className="font-medium text-gray-800">
-                      {new Date(appointment.date).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
+                      {formatDate(appointment.date)}
                     </span>
                   </div>
                   <p className="text-gray-700">
-                    Time: {appointment.time}
+                    Time: {formatTime(appointment.time)}
                   </p>
                   
                   {appointment.confirmed && (
@@ -630,8 +661,9 @@ const App: React.FC = () => {
                           href={meetingUrl} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="block mt-2 text-sm text-blue-600 hover:underline"
+                          className="flex items-center gap-2 mt-2 text-sm text-blue-600 hover:underline"
                         >
+                          <Video className="h-4 w-4" />
                           Join video consultation
                         </a>
                       )}
