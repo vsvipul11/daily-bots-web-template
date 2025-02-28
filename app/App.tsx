@@ -60,7 +60,7 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Array<{role: string, content: string, id: string}>>([
     {
       role: "assistant",
-      content: "Hello, I'm Dr. Riya from Cadabam's Consult. How can I help you today?",
+      content: "Hello, I'm Dr. Riya from Physiotattva. How can I help you today?",
       id: "welcome-message"
     }
   ]);
@@ -405,12 +405,12 @@ const App: React.FC = () => {
   // Email collection form
   if (showEmailInput) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-4">
         <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
           <div className="flex items-center justify-center mb-6">
             <Image 
-              src="https://cdn.prod.website-files.com/6067e9cc04d7b901547a284e/669b63600521ea1779b61d34_62a2dea737ece30511d5f9a8_Logo%20for%20headder%20(1).webp" 
-              alt="Cadabam's Hospital Logo"
+              src="https://via.placeholder.com/200x60" 
+              alt="Physiotattva Logo"
               width={200}
               height={60}
               className="h-12 w-auto"
@@ -472,13 +472,13 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto">
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto px-4">
       {/* Header */}
       <div className="w-full bg-white shadow-md rounded-lg p-4 mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Image 
-            src="https://cdn.prod.website-files.com/6067e9cc04d7b901547a284e/669b63600521ea1779b61d34_62a2dea737ece30511d5f9a8_Logo%20for%20headder%20(1).webp" 
-            alt="Cadabam's Hospital Logo"
+            src="https://via.placeholder.com/150x50" 
+            alt="Physiotattva Logo"
             width={150}
             height={50}
             className="h-10 w-auto"
@@ -489,11 +489,11 @@ const App: React.FC = () => {
           <h1 className="text-xl font-bold text-blue-800">Dr. Riya</h1>
         </div>
         <div className="bg-blue-100 px-3 py-1 rounded-full text-sm text-blue-800 font-medium">
-          AI Mental Health Assistant
+          AI Physiotherapy Assistant
         </div>
       </div>
 
-      <div className="flex w-full gap-6">
+      <div className="flex w-full gap-6 flex-col md:flex-row">
         {/* Main conversation area */}
         <div className="flex-1">
           {/* Error message */}
@@ -513,7 +513,7 @@ const App: React.FC = () => {
                 >
                   <div 
                     className={`max-w-xs md:max-w-md rounded-lg p-3 ${
-                      message.role === 'user' 
+                                       message.role === 'user' 
                         ? 'bg-blue-600 text-white rounded-br-none' 
                         : 'bg-gray-100 text-gray-800 rounded-bl-none'
                     }`}
@@ -590,14 +590,14 @@ const App: React.FC = () => {
             
             <div className="w-full max-w-md mt-4 text-center">
               <p className="text-xs text-gray-500">
-                Cadabam&apos;s Consult - Available Monday to Saturday, 9 AM to 7 PM
+                Physiotattva - Available Monday to Saturday, 9 AM to 7 PM
               </p>
             </div>
           </div>
         </div>
 
         {/* Right side panel with consultation information */}
-        <div className="w-80 shrink-0">
+        <div className="w-full md:w-80 shrink-0">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 sticky top-4">
             <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-gray-200">
               Consultation Details
